@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  promotion-letters:
+    build: .
+    container_name: promotion-letters-app
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this}
+      - RATE_LIMIT_STORAGE_URL=redis://redis:6379
+    volumes:
+      # Mount logs directory for persistence
+      - ./logs:/app/logs
+      # Optional: mount templates for development
+      # - ./templates:/app/templates
+      # - ./static:/app/static
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - promotion-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: promotion-letters-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - promotion-network
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:
+
+networks:
+  promotion-network:
+    driver: bridge
