@@ -16,8 +16,8 @@ app = Flask(__name__)
 
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-this')
-app.config['SESSION_TYPE'] = 'redis'
-app.config['SESSION_REDIS'] = None  # Will be set up with Redis connection
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = '/tmp/flask_sessions'
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'promotion-letters:'
@@ -34,28 +34,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Redis connection for sessions and rate limiting
+# Initialize Redis connection for rate limiting only
 try:
     import redis
-    redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=False)  # Changed to False
-    app.config['SESSION_REDIS'] = redis_client
-    logger.info("Redis connection established")
+    redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
+    redis_client.ping()  # Test connection
+    logger.info("Redis connection established for rate limiting")
 except Exception as e:
     logger.error(f"Redis connection failed: {e}")
-    # Fallback to filesystem sessions for development
-    app.config['SESSION_TYPE'] = 'filesystem'
-    app.config['SESSION_FILE_DIR'] = '/tmp/flask_sessions'
+    redis_client = None
 
 # Initialize session management
 Session(app)
 
 # Initialize rate limiter
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    storage_uri=os.environ.get('RATE_LIMIT_STORAGE_URL', 'redis://redis:6379'),
-    default_limits=["100 per hour"]
-)
+if redis_client:
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        storage_uri=os.environ.get('RATE_LIMIT_STORAGE_URL', 'redis://redis:6379'),
+        default_limits=["100 per hour"]
+    )
+    logger.info("Rate limiter initialized with Redis")
+else:
+    # Fallback to memory storage for rate limiting
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["100 per hour"]
+    )
+    logger.info("Rate limiter initialized with memory storage")
 
 # Initialize Claude client
 try:
@@ -321,8 +329,9 @@ def internal_error(e):
     return render_template('500.html'), 500
 
 if __name__ == '__main__':
-    # Create logs directory if it doesn't exist
+    # Create necessary directories
     os.makedirs('logs', exist_ok=True)
+    os.makedirs('/tmp/flask_sessions', exist_ok=True)
     
     # Run the application
     app.run(
