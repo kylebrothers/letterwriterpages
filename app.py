@@ -195,6 +195,11 @@ def health():
         'claude_available': claude_client is not None
     })
 
+# Favicon route to prevent errors
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204  # No content response
+
 # Generic page route
 @app.route('/<page_name>')
 def generic_page(page_name):
