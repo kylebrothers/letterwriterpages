@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+{% block title %}Test Page - Promotion Letters Tool{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex align-items-center mb-4">
+                <i class="fas fa-flask fa-2x text-primary me-3"></i>
+                <div>
+                    <h1 class="h2 mb-0">Dynamic Architecture Test Page</h1>
+                    <p class="text-muted mb-0">Test the generic backend system with file uploads and custom prompts</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-edit me-2"></i>Test Form
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="pageForm" enctype="multipart/form-data">
+                        <!-- Basic Text Inputs -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="user_name" class="form-label">Your Name</label>
+                                <input type="text" class="form-control" id="user_name" name="user_name" 
+                                       placeholder="Enter your name" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="document_type" class="form-label">Document Type</label>
+                                <select class="form-select" id="document_type" name="document_type" required>
+                                    <option value="">Select document type...</option>
+                                    <option value="email">Professional Email</option>
+                                    <option value="summary">Document Summary</option>
+                                    <option value="analysis">Content Analysis</option>
+                                    <option value="custom">Custom Request</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- File Upload Section -->
+                        <div class="mb-3">
+                            <label class="form-label">Upload Files (Optional)</label>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-2">
+                                        <label for="primary_file" class="form-label text-muted small">Primary Document</label>
+                                        <input type="file" class="form-control" id="primary_file" name="primary_file" 
+                                               accept=".docx,.pdf" onchange="showFileName(this, 'primary-file-name')">
+                                        <div id="primary-file-name" class="text-muted small mt-1"></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-2">
+                                        <label for="reference_file" class="form-label text-muted small">Reference Document</label>
+                                        <input type="file" class="form-control" id="reference_file" name="reference_file" 
+                                               accept=".docx,.pdf" onchange="showFileName(this, 'reference-file-name')">
+                                        <div id="reference-file-name" class="text-muted small mt-1"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Accepted formats: PDF, DOCX | Max size: 10MB per file
+                            </div>
+                        </div>
+
+                        <!-- Additional Context -->
+                        <div class="mb-3">
+                            <label for="additional_context" class="form-label">Additional Context</label>
+                            <textarea class="form-control" id="additional_context" name="additional_context" 
+                                      rows="3" placeholder="Add any additional context or specific requirements..."></textarea>
+                            <div class="form-text">
+                                <span id="context-count">0</span> characters
+                            </div>
+                        </div>
+
+                        <!-- Claude Prompt Section -->
+                        <div class="mb-4">
+                            <div class="d-flex align-items-center mb-2">
+                                <label for="claude_prompt" class="form-label mb-0 me-2">Claude Prompt</label>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" 
+                                        onclick="resetPrompt()" title="Reset to default prompt">
+                                    <i class="fas fa-undo-alt"></i> Reset
+                                </button>
+                            </div>
+                            <textarea class="form-control" id="claude_prompt" name="claude_prompt" 
+                                      rows="8" required>You are a helpful AI assistant. Based on the provided information and files, please create the requested content.
+
+Instructions:
+1. Use the form data and uploaded file contents as context
+2. Generate content appropriate for the selected document type
+3. Maintain a professional tone
+4. Be comprehensive but concise
+5. Structure the output clearly with headings where appropriate
+
+Please analyze the provided information and generate the requested content accordingly.</textarea>
+                            <div class="form-text">
+                                <i class="fas fa-magic me-1"></i>
+                                You can edit this prompt to customize how Claude generates your content.
+                                <span class="float-end"><span id="prompt-count">0</span> characters</span>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-paper-plane me-2"></i>Generate Content
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">
+                        <i class="fas fa-info-circle me-2"></i>How This Works
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="small">
+                        <p><strong>Dynamic Architecture Demo:</strong></p>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-check text-success me-2"></i>No backend coding needed</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Automatic file processing</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Runtime prompt editing</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Generic API endpoint</li>
+                        </ul>
+                        
+                        <hr class="my-3">
+                        
+                        <p><strong>API Endpoint:</strong></p>
+                        <code class="small">/api/test</code>
+                        
+                        <p class="mt-3"><strong>Context Building:</strong></p>
+                        <div class="text-muted small">
+                            Form data and file contents are automatically added as context before your prompt.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">
+                        <i class="fas fa-clock me-2"></i>Processing Status
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div id="status-area">
+                        <div class="text-muted small">
+                            <i class="fas fa-circle text-secondary me-2"></i>Ready to process
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Area -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div id="result-area" style="display:none;">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-file-alt me-2"></i>Generated Content
+                        </h5>
+                        <div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm me-2" onclick="copyToClipboard()">
+                                <i class="fas fa-copy me-1"></i>Copy
+                            </button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="downloadContent()">
+                                <i class="fas fa-download me-1"></i>Download
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <pre id="generated-content" class="bg-light p-3 rounded" style="white-space: pre-wrap; max-height: 500px; overflow-y: auto;"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Character counters
+document.getElementById('additional_context').addEventListener('input', function() {
+    document.getElementById('context-count').textContent = this.value.length;
+});
+
+document.getElementById('claude_prompt').addEventListener('input', function() {
+    document.getElementById('prompt-count').textContent = this.value.length;
+});
+
+// Initialize character counts
+document.getElementById('context-count').textContent = document.getElementById('additional_context').value.length;
+document.getElementById('prompt-count').textContent = document.getElementById('claude_prompt').value.length;
+
+// File name display
+function showFileName(input, targetId) {
+    const target = document.getElementById(targetId);
+    if (input.files.length > 0) {
+        const file = input.files[0];
+        const size = (file.size / 1024 / 1024).toFixed(2);
+        target.innerHTML = `<i class="fas fa-file me-1"></i>${file.name} (${size} MB)`;
+        target.className = 'text-success small mt-1';
+    } else {
+        target.innerHTML = '';
+    }
+}
+
+// Reset prompt to default
+function resetPrompt() {
+    const defaultPrompt = `You are a helpful AI assistant. Based on the provided information and files, please create the requested content.
+
+Instructions:
+1. Use the form data and uploaded file contents as context
+2. Generate content appropriate for the selected document type
+3. Maintain a professional tone
+4. Be comprehensive but concise
+5. Structure the output clearly with headings where appropriate
+
+Please analyze the provided information and generate the requested content accordingly.`;
+    
+    document.getElementById('claude_prompt').value = defaultPrompt;
+    document.getElementById('prompt-count').textContent = defaultPrompt.length;
+}
+
+// Copy to clipboard
+function copyToClipboard() {
+    const content = document.getElementById('generated-content').textContent;
+    navigator.clipboard.writeText(content).then(function() {
+        // Show success feedback
+        const btn = event.target.closest('button');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+        btn.classList.replace('btn-outline-secondary', 'btn-success');
+        setTimeout(() => {
+            btn.innerHTML = originalHTML;
+            btn.classList.replace('btn-success', 'btn-outline-secondary');
+        }, 2000);
+    });
+}
+
+// Download content
+function downloadContent() {
+    const content = document.getElementById('generated-content').textContent;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'generated-content.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+}
+
+// Update status
+function updateStatus(message, type = 'info') {
+    const statusArea = document.getElementById('status-area');
+    const icons = {
+        'info': 'fas fa-circle text-secondary',
+        'processing': 'fas fa-spinner fa-spin text-primary',
+        'success': 'fas fa-check-circle text-success',
+        'error': 'fas fa-exclamation-circle text-danger'
+    };
+    
+    statusArea.innerHTML = `
+        <div class="text-muted small">
+            <i class="${icons[type]} me-2"></i>${message}
+        </div>
+    `;
+}
+
+// Form submission
+document.getElementById('pageForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const submitBtn = document.querySelector('button[type="submit"]');
+    const resultArea = document.getElementById('result-area');
+    
+    // Show loading state
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating...';
+    updateStatus('Processing files and generating content...', 'processing');
+    
+    try {
+        const response = await fetch('/api/test', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('generated-content').textContent = data.content;
+            resultArea.style.display = 'block';
+            updateStatus('Content generated successfully!', 'success');
+            
+            // Scroll to results
+            resultArea.scrollIntoView({ behavior: 'smooth' });
+        } else {
+            updateStatus('Error: ' + data.error, 'error');
+            alert('Error: ' + data.error);
+        }
+    } catch (error) {
+        updateStatus('Network error occurred', 'error');
+        alert('Network error: ' + error.message);
+    } finally {
+        // Reset button
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>Generate Content';
+    }
+});
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    updateStatus('Ready to process', 'info');
+});
+</script>
+{% endblock %}
