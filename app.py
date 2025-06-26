@@ -156,6 +156,43 @@ def validate_file(file):
     
     return True, "File is valid"
 
+def build_claude_prompt(form_data, uploaded_files_text):
+    """Build Claude prompt from form data and uploaded files"""
+    
+    # Get the custom prompt from the form
+    custom_prompt = form_data.get('claude_prompt', '').strip()
+    if not custom_prompt:
+        return None, "No Claude prompt provided"
+    
+    # Build the context sections
+    context_sections = []
+    
+    # Add form data (excluding the prompt itself)
+    form_context = {}
+    for key, value in form_data.items():
+        if key != 'claude_prompt' and value.strip():
+            form_context[key] = value.strip()
+    
+    if form_context:
+        context_sections.append("=== FORM DATA ===")
+        for key, value in form_context.items():
+            context_sections.append(f"{key.replace('_', ' ').title()}: {value}")
+    
+    # Add file contents
+    if uploaded_files_text:
+        for file_type, content in uploaded_files_text.items():
+            if content.strip():
+                context_sections.append(f"\n=== {file_type.upper()} FILE CONTENT ===")
+                context_sections.append(content.strip())
+    
+    # Combine everything
+    if context_sections:
+        full_prompt = "\n".join(context_sections) + "\n\n" + custom_prompt
+    else:
+        full_prompt = custom_prompt
+    
+    return full_prompt, None
+
 # Utility function to generate session ID
 def get_session_id():
     if 'session_id' not in session:
@@ -178,196 +215,90 @@ def health():
         'claude_available': claude_client is not None
     })
 
-# Chairs Promotion Letter
-@app.route('/chairs-promotion-letter')
-def chairs_promotion_letter():
+# Generic page route
+@app.route('/<page_name>')
+def generic_page(page_name):
+    """Serve any page that has a corresponding template"""
     session_id = get_session_id()
-    logger.info(f"Chairs promotion letter page accessed - Session: {session_id}")
-    return render_template('chairs_promotion_letter.html')
+    logger.info(f"Page accessed: {page_name} - Session: {session_id}")
+    
+    # Convert URL format to template format (e.g., chairs-promotion-letter -> chairs_promotion_letter.html)
+    template_name = page_name.replace('-', '_') + '.html'
+    
+    try:
+        return render_template(template_name, page_name=page_name)
+    except Exception as e:
+        logger.error(f"Template not found: {template_name} - {e}")
+        return render_template('404.html'), 404
 
-@app.route('/api/chairs-promotion-letter', methods=['POST'])
+# Generic API endpoint
+@app.route('/api/<page_name>', methods=['POST'])
 @limiter.limit("5 per minute")
-def api_chairs_promotion_letter():
+def generic_api(page_name):
+    """Generic API endpoint that handles any page"""
     if not claude_client:
         return jsonify({'error': 'Claude API not available'}), 503
     
     try:
-        # Handle file uploads
+        # Handle file uploads - process all uploaded files
         uploaded_files_text = {}
         
-        # Process CV upload
-        if 'cv_file' in request.files:
-            cv_file = request.files['cv_file']
-            is_valid, message = validate_file(cv_file)
-            if cv_file.filename and not is_valid:
-                return jsonify({'error': f'CV file error: {message}'}), 400
-            if cv_file.filename and is_valid:
+        for field_name in request.files:
+            file = request.files[field_name]
+            if file and file.filename:
+                is_valid, message = validate_file(file)
+                if not is_valid:
+                    return jsonify({'error': f'{field_name} error: {message}'}), 400
+                
                 try:
-                    uploaded_files_text['cv'] = process_uploaded_file(cv_file)
-                    logger.info(f"CV file processed: {cv_file.filename}")
+                    extracted_text = process_uploaded_file(file)
+                    if extracted_text:
+                        # Clean up field name for context
+                        clean_field_name = field_name.replace('_file', '').replace('_', ' ')
+                        uploaded_files_text[clean_field_name] = extracted_text
+                        logger.info(f"File processed: {file.filename} for field {field_name}")
                 except Exception as e:
-                    return jsonify({'error': f'Error processing CV file: {str(e)}'}), 400
-        
-        # Process teaching evaluations upload
-        if 'teaching_file' in request.files:
-            teaching_file = request.files['teaching_file']
-            is_valid, message = validate_file(teaching_file)
-            if teaching_file.filename and not is_valid:
-                return jsonify({'error': f'Teaching evaluations file error: {message}'}), 400
-            if teaching_file.filename and is_valid:
-                try:
-                    uploaded_files_text['teaching'] = process_uploaded_file(teaching_file)
-                    logger.info(f"Teaching evaluations file processed: {teaching_file.filename}")
-                except Exception as e:
-                    return jsonify({'error': f'Error processing teaching evaluations file: {str(e)}'}), 400
+                    return jsonify({'error': f'Error processing {field_name}: {str(e)}'}), 400
         
         # Handle form data
         form_data = request.form.to_dict()
         session_id = get_session_id()
         
-        logger.info(f"Chairs promotion letter API called - Session: {session_id}")
+        logger.info(f"API called for page: {page_name} - Session: {session_id}")
         
-        # TODO: Implement Claude API call with form_data and uploaded_files_text
-        # This is where you'll add the specific Claude prompt and logic
+        # Build Claude prompt from form data and files
+        claude_prompt, error = build_claude_prompt(form_data, uploaded_files_text)
+        if error:
+            return jsonify({'error': error}), 400
         
-        return jsonify({
-            'success': True,
-            'message': 'Chairs promotion letter endpoint ready',
-            'session_id': session_id,
-            'files_processed': list(uploaded_files_text.keys()),
-            'form_data_received': list(form_data.keys())
-        })
+        # Call Claude API
+        try:
+            message = claude_client.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=4000,
+                messages=[
+                    {"role": "user", "content": claude_prompt}
+                ]
+            )
+            
+            generated_content = message.content[0].text
+            
+            logger.info(f"Claude API successful for page: {page_name} - Session: {session_id}")
+            
+            return jsonify({
+                'success': True,
+                'content': generated_content,
+                'session_id': session_id,
+                'files_processed': list(uploaded_files_text.keys()),
+                'form_fields_received': [k for k in form_data.keys() if k != 'claude_prompt']
+            })
+            
+        except Exception as e:
+            logger.error(f"Claude API error for page {page_name}: {e}")
+            return jsonify({'error': f'Error generating content: {str(e)}'}), 500
     
     except Exception as e:
-        logger.error(f"Error in chairs promotion letter API: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-# Faculty Promotion Letter
-@app.route('/faculty-promotion-letter')
-def faculty_promotion_letter():
-    session_id = get_session_id()
-    logger.info(f"Faculty promotion letter page accessed - Session: {session_id}")
-    return render_template('faculty_promotion_letter.html')
-
-@app.route('/api/faculty-promotion-letter', methods=['POST'])
-@limiter.limit("5 per minute")
-def api_faculty_promotion_letter():
-    if not claude_client:
-        return jsonify({'error': 'Claude API not available'}), 503
-    
-    try:
-        # Handle file uploads
-        uploaded_files_text = {}
-        
-        # Process CV upload
-        if 'cv_file' in request.files:
-            cv_file = request.files['cv_file']
-            is_valid, message = validate_file(cv_file)
-            if cv_file.filename and not is_valid:
-                return jsonify({'error': f'CV file error: {message}'}), 400
-            if cv_file.filename and is_valid:
-                try:
-                    uploaded_files_text['cv'] = process_uploaded_file(cv_file)
-                    logger.info(f"CV file processed: {cv_file.filename}")
-                except Exception as e:
-                    return jsonify({'error': f'Error processing CV file: {str(e)}'}), 400
-        
-        # Process publications/work samples upload
-        if 'publications_file' in request.files:
-            pub_file = request.files['publications_file']
-            is_valid, message = validate_file(pub_file)
-            if pub_file.filename and not is_valid:
-                return jsonify({'error': f'Publications file error: {message}'}), 400
-            if pub_file.filename and is_valid:
-                try:
-                    uploaded_files_text['publications'] = process_uploaded_file(pub_file)
-                    logger.info(f"Publications file processed: {pub_file.filename}")
-                except Exception as e:
-                    return jsonify({'error': f'Error processing publications file: {str(e)}'}), 400
-        
-        # Handle form data
-        form_data = request.form.to_dict()
-        session_id = get_session_id()
-        
-        logger.info(f"Faculty promotion letter API called - Session: {session_id}")
-        
-        # TODO: Implement Claude API call with form_data and uploaded_files_text
-        # This is where you'll add the specific Claude prompt and logic
-        
-        return jsonify({
-            'success': True,
-            'message': 'Faculty promotion letter endpoint ready',
-            'session_id': session_id,
-            'files_processed': list(uploaded_files_text.keys()),
-            'form_data_received': list(form_data.keys())
-        })
-    
-    except Exception as e:
-        logger.error(f"Error in faculty promotion letter API: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-# Personal Statement
-@app.route('/personal-statement')
-def personal_statement():
-    session_id = get_session_id()
-    logger.info(f"Personal statement page accessed - Session: {session_id}")
-    return render_template('personal_statement.html')
-
-@app.route('/api/personal-statement', methods=['POST'])
-@limiter.limit("5 per minute")
-def api_personal_statement():
-    if not claude_client:
-        return jsonify({'error': 'Claude API not available'}), 503
-    
-    try:
-        # Handle file uploads
-        uploaded_files_text = {}
-        
-        # Process CV upload
-        if 'cv_file' in request.files:
-            cv_file = request.files['cv_file']
-            is_valid, message = validate_file(cv_file)
-            if cv_file.filename and not is_valid:
-                return jsonify({'error': f'CV file error: {message}'}), 400
-            if cv_file.filename and is_valid:
-                try:
-                    uploaded_files_text['cv'] = process_uploaded_file(cv_file)
-                    logger.info(f"CV file processed: {cv_file.filename}")
-                except Exception as e:
-                    return jsonify({'error': f'Error processing CV file: {str(e)}'}), 400
-        
-        # Process job posting/requirements upload
-        if 'job_file' in request.files:
-            job_file = request.files['job_file']
-            is_valid, message = validate_file(job_file)
-            if job_file.filename and not is_valid:
-                return jsonify({'error': f'Job posting file error: {message}'}), 400
-            if job_file.filename and is_valid:
-                try:
-                    uploaded_files_text['job_posting'] = process_uploaded_file(job_file)
-                    logger.info(f"Job posting file processed: {job_file.filename}")
-                except Exception as e:
-                    return jsonify({'error': f'Error processing job posting file: {str(e)}'}), 400
-        
-        # Handle form data
-        form_data = request.form.to_dict()
-        session_id = get_session_id()
-        
-        logger.info(f"Personal statement API called - Session: {session_id}")
-        
-        # TODO: Implement Claude API call with form_data and uploaded_files_text
-        # This is where you'll add the specific Claude prompt and logic
-        
-        return jsonify({
-            'success': True,
-            'message': 'Personal statement endpoint ready',
-            'session_id': session_id,
-            'files_processed': list(uploaded_files_text.keys()),
-            'form_data_received': list(form_data.keys())
-        })
-    
-    except Exception as e:
-        logger.error(f"Error in personal statement API: {e}")
+        logger.error(f"Error in API for page {page_name}: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 # Error handlers
