@@ -38,12 +38,18 @@ logger.info("Rate limiter initialized with memory storage")
 
 # Initialize Claude client
 try:
-    claude_client = anthropic.Anthropic(
-        api_key=os.environ.get('CLAUDE_API_KEY')
-    )
-    logger.info("Claude API client initialized")
+    api_key = os.environ.get('CLAUDE_API_KEY')
+    if not api_key:
+        raise ValueError("CLAUDE_API_KEY environment variable not set")
+    if not api_key.startswith('sk-ant-'):
+        raise ValueError("Invalid Claude API key format")
+    
+    claude_client = anthropic.Anthropic(api_key=api_key)
+    logger.info("Claude API client initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Claude client: {e}")
+    logger.error(f"API key present: {bool(os.environ.get('CLAUDE_API_KEY'))}")
+    logger.error(f"API key starts correctly: {str(os.environ.get('CLAUDE_API_KEY', '')).startswith('sk-ant-') if os.environ.get('CLAUDE_API_KEY') else False}")
     claude_client = None
 
 # File processing functions
