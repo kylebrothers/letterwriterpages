@@ -37,13 +37,14 @@ logger = logging.getLogger(__name__)
 # Initialize Redis connection for sessions and rate limiting
 try:
     import redis
-    redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
+    redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=False)  # Changed to False
     app.config['SESSION_REDIS'] = redis_client
     logger.info("Redis connection established")
 except Exception as e:
     logger.error(f"Redis connection failed: {e}")
     # Fallback to filesystem sessions for development
     app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = '/tmp/flask_sessions'
 
 # Initialize session management
 Session(app)
