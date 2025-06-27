@@ -120,6 +120,56 @@ def process_uploaded_file(file):
     else:
         raise ValueError(f"Unsupported file type. Please upload .docx or .pdf files only.")
 
+def process_server_file(file_path):
+    """Process server-stored file and extract text"""
+    if not os.path.exists(file_path):
+        return None
+    
+    filename = file_path.lower()
+    
+    try:
+        if filename.endswith('.docx'):
+            with open(file_path, 'rb') as f:
+                return extract_text_from_docx(f)
+        elif filename.endswith('.pdf'):
+            with open(file_path, 'rb') as f:
+                return extract_text_from_pdf(f)
+        elif filename.endswith('.txt'):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        else:
+            logger.warning(f"Unsupported server file type: {file_path}")
+            return None
+    except Exception as e:
+        logger.error(f"Error processing server file {file_path}: {e}")
+        return None
+
+def load_server_files(page_name):
+    """Load all files from the server directory for this page"""
+    server_files = {}
+    server_dir = f"/app/server_files/{page_name}"
+    
+    if not os.path.exists(server_dir):
+        logger.info(f"No server files directory found for page: {page_name}")
+        return server_files
+    
+    try:
+        for filename in os.listdir(server_dir):
+            file_path = os.path.join(server_dir, filename)
+            if os.path.isfile(file_path):
+                content = process_server_file(file_path)
+                if content:
+                    # Use filename without extension as key
+                    file_key = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ')
+                    server_files[file_key] = content
+                    logger.info(f"Loaded server file: {filename} for page {page_name}")
+        
+        logger.info(f"Loaded {len(server_files)} server files for page: {page_name}")
+    except Exception as e:
+        logger.error(f"Error loading server files for page {page_name}: {e}")
+    
+    return server_files
+
 def validate_file(file):
     """Validate uploaded file"""
     if not file or not file.filename:
@@ -142,8 +192,8 @@ def validate_file(file):
     
     return True, "File is valid"
 
-def build_claude_prompt(form_data, uploaded_files_text):
-    """Build Claude prompt from form data and uploaded files"""
+def build_claude_prompt(form_data, uploaded_files_text, server_files_text):
+    """Build Claude prompt from form data, uploaded files, and server files"""
     
     # Get the custom prompt from the form
     custom_prompt = form_data.get('claude_prompt', '').strip()
@@ -153,6 +203,13 @@ def build_claude_prompt(form_data, uploaded_files_text):
     # Build the context sections
     context_sections = []
     
+    # Add server files first (background/examples)
+    if server_files_text:
+        context_sections.append("=== SERVER REFERENCE FILES ===")
+        for file_name, content in server_files_text.items():
+            context_sections.append(f"\n--- {file_name.upper()} ---")
+            context_sections.append(content.strip())
+    
     # Add form data (excluding the prompt itself)
     form_context = {}
     for key, value in form_data.items():
@@ -160,15 +217,15 @@ def build_claude_prompt(form_data, uploaded_files_text):
             form_context[key] = value.strip()
     
     if form_context:
-        context_sections.append("=== FORM DATA ===")
+        context_sections.append("\n=== FORM DATA ===")
         for key, value in form_context.items():
             context_sections.append(f"{key.replace('_', ' ').title()}: {value}")
     
-    # Add file contents
+    # Add uploaded file contents
     if uploaded_files_text:
         for file_type, content in uploaded_files_text.items():
             if content.strip():
-                context_sections.append(f"\n=== {file_type.upper()} FILE CONTENT ===")
+                context_sections.append(f"\n=== UPLOADED {file_type.upper()} CONTENT ===")
                 context_sections.append(content.strip())
     
     # Combine everything
@@ -251,14 +308,17 @@ def generic_api(page_name):
                 except Exception as e:
                     return jsonify({'error': f'Error processing {field_name}: {str(e)}'}), 400
         
+        # Load server files for this page
+        server_files_text = load_server_files(page_name)
+        
         # Handle form data
         form_data = request.form.to_dict()
         session_id = get_session_id()
         
         logger.info(f"API called for page: {page_name} - Session: {session_id}")
         
-        # Build Claude prompt from form data and files
-        claude_prompt, error = build_claude_prompt(form_data, uploaded_files_text)
+        # Build Claude prompt from form data, uploaded files, and server files
+        claude_prompt, error = build_claude_prompt(form_data, uploaded_files_text, server_files_text)
         if error:
             return jsonify({'error': error}), 400
         
@@ -281,6 +341,7 @@ def generic_api(page_name):
                 'content': generated_content,
                 'session_id': session_id,
                 'files_processed': list(uploaded_files_text.keys()),
+                'server_files_loaded': list(server_files_text.keys()),
                 'form_fields_received': [k for k in form_data.keys() if k != 'claude_prompt']
             })
             
