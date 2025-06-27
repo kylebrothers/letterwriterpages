@@ -57,9 +57,22 @@ test:
 setup:
 	@if [ ! -f .env ]; then \
 		echo "Creating .env file..."; \
-		echo "CLAUDE_API_KEY=your_claude_api_key_here" > .env; \
-		echo "SECRET_KEY=$$(openssl rand -base64 32)" >> .env; \
-		echo "Please edit .env file and add your Claude API key"; \
+		echo "# Claude API Configuration" > .env; \
+		echo "CLAUDE_API_KEY=your_claude_api_key_here" >> .env; \
+		echo "" >> .env; \
+		echo "# Flask Configuration" >> .env; \
+		echo "SECRET_KEY=$(openssl rand -base64 32)" >> .env; \
+		echo "FLASK_ENV=production" >> .env; \
+		echo "FLASK_DEBUG=false" >> .env; \
+		echo "" >> .env; \
+		echo "# Docker Configuration" >> .env; \
+		echo "HOST_PORT=5000" >> .env; \
+		echo "NAS_IP=192.168.0.134" >> .env; \
+		echo ""; \
+		echo ".env file created successfully!"; \
+		echo "Please edit .env file and:"; \
+		echo "1. Add your Claude API key"; \
+		echo "2. Update NAS_IP if different from 192.168.0.134"; \
 	else \
 		echo ".env file already exists"; \
 	fi
