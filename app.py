@@ -462,12 +462,32 @@ def ratelimit_handler(e):
 
 @app.errorhandler(404)
 def not_found(e):
-    return render_template('404.html'), 404
+    try:
+        return render_template('404.html'), 404
+    except:
+        # Fallback if 404.html template fails
+        return '''
+        <html><body>
+        <h1>404 Page Not Found</h1>
+        <p>The page you're looking for doesn't exist.</p>
+        <a href="/">Go Home</a>
+        </body></html>
+        ''', 404
 
 @app.errorhandler(500)
 def internal_error(e):
     logger.error(f"Internal server error: {e}")
-    return render_template('500.html'), 500
+    try:
+        return render_template('500.html'), 500
+    except:
+        # Fallback if 500.html template fails
+        return '''
+        <html><body>
+        <h1>500 Internal Server Error</h1>
+        <p>The server encountered an internal error.</p>
+        <a href="/">Go Home</a>
+        </body></html>
+        ''', 500
 
 if __name__ == '__main__':
     # Create logs directory if it doesn't exist
