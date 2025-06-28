@@ -289,12 +289,17 @@ def generic_page(page_name):
     template_name = page_name.replace('-', '_') + '.html'
     
     # Load server files for this page to show on the page
-    server_files_info = get_server_files_info(page_name)
+    try:
+        server_files_info = get_server_files_info(page_name)
+        logger.info(f"Server files info loaded for {page_name}: {len(server_files_info)} files")
+    except Exception as e:
+        logger.error(f"Error loading server files info for {page_name}: {e}")
+        server_files_info = []
     
     try:
         return render_template(template_name, page_name=page_name, server_files_info=server_files_info)
     except Exception as e:
-        logger.error(f"Template not found: {template_name} - {e}")
+        logger.error(f"Template error for {template_name}: {e}")
         return render_template('404.html'), 404
 
 def get_server_files_info(page_name):
@@ -302,13 +307,25 @@ def get_server_files_info(page_name):
     server_files_info = []
     server_dir = f"/app/server_files/{page_name}"
     
+    logger.info(f"Getting server files info for page: {page_name} from directory: {server_dir}")
+    
     if not os.path.exists(server_dir):
+        logger.info(f"Server files directory does not exist: {server_dir}")
         return server_files_info
     
     try:
-        for filename in os.listdir(server_dir):
-            file_path = os.path.join(server_dir, filename)
-            if os.path.isfile(file_path):
+        files_list = os.listdir(server_dir)
+        logger.info(f"Found {len(files_list)} files in {server_dir}: {files_list}")
+        
+        for filename in files_list:
+            try:
+                file_path = os.path.join(server_dir, filename)
+                logger.info(f"Processing file: {file_path}")
+                
+                if not os.path.isfile(file_path):
+                    logger.info(f"Skipping {filename} - not a regular file")
+                    continue
+                
                 # Get file info
                 file_stat = os.stat(file_path)
                 file_size = file_stat.st_size
@@ -335,19 +352,28 @@ def get_server_files_info(page_name):
                 # Create display name
                 display_name = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
                 
-                server_files_info.append({
+                file_info = {
                     'filename': filename,
                     'display_name': display_name,
                     'file_type': file_type,
                     'size': size_str,
                     'supported': file_ext in ['.docx', '.pdf', '.txt']
-                })
+                }
+                
+                server_files_info.append(file_info)
+                logger.info(f"Added file info: {file_info}")
+                
+            except Exception as file_error:
+                logger.error(f"Error processing file {filename}: {file_error}")
+                continue
         
         # Sort by filename
         server_files_info.sort(key=lambda x: x['filename'])
+        logger.info(f"Successfully processed {len(server_files_info)} files for page {page_name}")
         
     except Exception as e:
-        logger.error(f"Error getting server files info for page {page_name}: {e}")
+        logger.error(f"Error listing files in directory {server_dir}: {e}")
+        return []
     
     return server_files_info
 
