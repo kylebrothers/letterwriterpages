@@ -149,22 +149,37 @@ def load_server_files(page_name):
     server_files = {}
     server_dir = f"/app/server_files/{page_name}"
     
+    logger.info(f"Looking for server files in: {server_dir}")
+    
     if not os.path.exists(server_dir):
-        logger.info(f"No server files directory found for page: {page_name}")
+        logger.warning(f"No server files directory found for page: {page_name} at path: {server_dir}")
         return server_files
     
     try:
-        for filename in os.listdir(server_dir):
+        all_files = os.listdir(server_dir)
+        logger.info(f"Files found in directory: {all_files}")
+        
+        for filename in all_files:
             file_path = os.path.join(server_dir, filename)
+            logger.info(f"Processing file: {file_path}")
+            
             if os.path.isfile(file_path):
+                logger.info(f"File {filename} is a regular file, attempting to process...")
                 content = process_server_file(file_path)
                 if content:
                     # Use filename without extension as key
                     file_key = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ')
                     server_files[file_key] = content
-                    logger.info(f"Loaded server file: {filename} for page {page_name}")
+                    logger.info(f"Successfully loaded server file: {filename} as key: {file_key}")
+                else:
+                    logger.warning(f"Failed to extract content from file: {filename}")
+            else:
+                logger.info(f"Skipping {filename} - not a regular file")
         
-        logger.info(f"Loaded {len(server_files)} server files for page: {page_name}")
+        logger.info(f"Total server files loaded for page {page_name}: {len(server_files)}")
+        if server_files:
+            logger.info(f"Server file keys: {list(server_files.keys())}")
+        
     except Exception as e:
         logger.error(f"Error loading server files for page {page_name}: {e}")
     
@@ -273,11 +288,68 @@ def generic_page(page_name):
     # Convert URL format to template format (e.g., chairs-promotion-letter -> chairs_promotion_letter.html)
     template_name = page_name.replace('-', '_') + '.html'
     
+    # Load server files for this page to show on the page
+    server_files_info = get_server_files_info(page_name)
+    
     try:
-        return render_template(template_name, page_name=page_name)
+        return render_template(template_name, page_name=page_name, server_files_info=server_files_info)
     except Exception as e:
         logger.error(f"Template not found: {template_name} - {e}")
         return render_template('404.html'), 404
+
+def get_server_files_info(page_name):
+    """Get information about available server files for display"""
+    server_files_info = []
+    server_dir = f"/app/server_files/{page_name}"
+    
+    if not os.path.exists(server_dir):
+        return server_files_info
+    
+    try:
+        for filename in os.listdir(server_dir):
+            file_path = os.path.join(server_dir, filename)
+            if os.path.isfile(file_path):
+                # Get file info
+                file_stat = os.stat(file_path)
+                file_size = file_stat.st_size
+                
+                # Format file size
+                if file_size < 1024:
+                    size_str = f"{file_size} B"
+                elif file_size < 1024 * 1024:
+                    size_str = f"{file_size / 1024:.1f} KB"
+                else:
+                    size_str = f"{file_size / (1024 * 1024):.1f} MB"
+                
+                # Get file type
+                file_ext = os.path.splitext(filename)[1].lower()
+                if file_ext == '.docx':
+                    file_type = 'Word Document'
+                elif file_ext == '.pdf':
+                    file_type = 'PDF Document'
+                elif file_ext == '.txt':
+                    file_type = 'Text File'
+                else:
+                    file_type = 'Unknown'
+                
+                # Create display name
+                display_name = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
+                
+                server_files_info.append({
+                    'filename': filename,
+                    'display_name': display_name,
+                    'file_type': file_type,
+                    'size': size_str,
+                    'supported': file_ext in ['.docx', '.pdf', '.txt']
+                })
+        
+        # Sort by filename
+        server_files_info.sort(key=lambda x: x['filename'])
+        
+    except Exception as e:
+        logger.error(f"Error getting server files info for page {page_name}: {e}")
+    
+    return server_files_info
 
 # Generic API endpoint
 @app.route('/api/<page_name>', methods=['POST'])
