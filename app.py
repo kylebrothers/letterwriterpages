@@ -1,4 +1,164 @@
-from flask import Flask, render_template, request, jsonify, session
+def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_data, session_id):
+    """Handle no-call pages that organize and display information without API calls"""
+    try:
+        logger.info(f"Processing no-call page: {page_name}")
+        
+        # Build organized content from available data
+        content_sections = []
+        
+        # Add page header
+        page_title = form_data.get('page_title', page_name.replace('-', ' ').title())
+        content_sections.append(f"# {page_title}")
+        content_sections.append("")
+        
+        # Add server reference files with rich data
+        if server_files_data:
+            content_sections.append("## Reference Materials")
+            content_sections.append("")
+            for file_name, file_data in server_files_data.items():
+                content_sections.append(f"### {file_name.title()}")
+                content_sections.append("")
+                
+                if isinstance(file_data, dict):
+                    # Rich file data
+                    content_sections.append(f"**File Type:** {file_data.get('file_type', 'unknown').upper()}")
+                    
+                    if 'text_content' in file_data:
+                        content_sections.append("**Text Content Preview:**")
+                        preview = file_data['text_content'][:500] + "..." if len(file_data['text_content']) > 500 else file_data['text_content']
+                        content_sections.append(preview)
+                    
+                    if 'xml_structure' in file_data and file_data['xml_structure']:
+                        content_sections.append("**Document Structure Available:** Yes (XML)")
+                    
+                    if 'form_data' in file_data and file_data['form_data']:
+                        content_sections.append("**PDF Form Data Available:** Yes")
+                        if 'document_info' in file_data['form_data']:
+                            doc_info = file_data['form_data']['document_info']
+                            content_sections.append(f"- Pages: {doc_info.get('page_count', 'unknown')}")
+                            content_sections.append(f"- Has Form Fields: {doc_info.get('has_form_fields', False)}")
+                else:
+                    # Legacy text data
+                    preview = str(file_data)[:500] + "..." if len(str(file_data)) > 500 else str(file_data)
+                    content_sections.append(preview)
+                
+                content_sections.append("")
+        
+        # Add form data
+        if form_data:
+            content_sections.append("## Submitted Information")
+            content_sections.append("")
+            for key, value in form_data.items():
+                if key not in ['page_type', 'page_title'] and value.strip():
+                    display_key = key.replace('_', ' ').title()
+                    content_sections.append(f"**{display_key}:** {value}")
+            content_sections.append("")
+        
+        # Add uploaded files with rich data
+        if uploaded_files_data:
+            content_sections.append("## Uploaded Documents")
+            content_sections.append("")
+            for file_type, file_data in uploaded_files_data.items():
+                content_sections.append(f"### {file_type.title()}")
+                content_sections.append("")
+                
+                if isinstance(file_data, dict):
+                    # Rich file data
+                    content_sections.append(f"**File Type:** {file_data.get('file_type', 'unknown').upper()}")
+                    
+                    if 'text_content' in file_data:
+                        content_sections.append("**Text Content Preview:**")
+                        preview = file_data['text_content'][:500] + "..." if len(file_data['text_content']) > 500 else file_data['text_content']
+                        content_sections.append(preview)
+                    
+                    if 'xml_structure' in file_data and file_data['xml_structure']:
+                        content_sections.append("**Document Structure:** Available")
+                        xml_files = list(file_data['xml_structure'].keys())
+                        if 'error' in xml_files:
+                            xml_files.remove('error')
+                        content_sections.append(f"- XML Components: {', '.join(xml_files)}")
+                    
+                    if 'form_data' in file_data and file_data['form_data']:
+                        content_sections.append("**PDF Analysis:**")
+                        if 'document_info' in file_data['form_data']:
+                            doc_info = file_data['form_data']['document_info']
+                            content_sections.append(f"- Pages: {doc_info.get('page_count', 'unknown')}")
+                            content_sections.append(f"- Encrypted: {doc_info.get('is_encrypted', False)}")
+                            content_sections.append(f"- Has Form Fields: {doc_info.get('has_form_fields', False)}")
+                        
+                        if 'metadata' in file_data['form_data'] and file_data['form_data']['metadata']:
+                            content_sections.append("- Metadata: Available")
+                else:
+                    # Legacy text data
+                    preview = str(file_data)[:500] + "..." if len(str(file_data)) > 500 else str(file_data)
+                    content_sections.append(preview)
+                
+                content_sections.append("")
+        
+        # Add summary
+        total_items = len(server_files_data) + len(uploaded_files_data) + len([k for k in form_data.keys() if k not in ['page_type', 'page_title'] and form_data[k].strip()])
+        content_sections.append("## Summary")
+        content_sections.append("")
+        content_sections.append(f"- **Server Reference Files:** {len(server_files_data)}")
+        content_sections.append(f"- **Uploaded Documents:** {len(uploaded_files_data)}")
+        content_sections.append(f"- **Form Fields Completed:** {len([k for k in form_data.keys() if k not in ['page_type', 'page_title'] and form_data[k].strip()])}")
+        content_sections.append(f"- **Total Items Processed:** {total_items}")
+        
+        generated_content = "\n".join(content_sections)
+        
+        logger.info(f"No-call page processed successfully for: {page_name}")
+        
+        return jsonify({
+            'success': True,
+            'content': generated_content,
+            'session_id': session_id,
+            'page_type': 'no-call',
+            'files_processed': list(uploaded_files_data.keys()),
+            'server_files_loaded': list(server_files_data.keys()),
+            'form_fields_received': [k for k in form_data.keys() if k not in ['page_type', 'page_title']]
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in no-call page handler: {e}")
+        return jsonify({'error': 'Error processing no-call page'}), 500
+
+def handle_claude_call_page(page_name, form_data, uploaded_files_data, server_files_data, session_id):
+    """Handle Claude API pages (existing functionality)"""
+    if not claude_client:
+        return jsonify({'error': 'Claude API not available'}), 503
+    
+    try:
+        # Build Claude prompt from form data, uploaded files, and server files
+        claude_prompt, error = build_claude_prompt(form_data, uploaded_files_data, server_files_data)
+        if error:
+            return jsonify({'error': error}), 400
+        
+        # Call Claude API
+        message = claude_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=4000,
+            messages=[
+                {"role": "user", "content": claude_prompt}
+            ]
+        )
+        
+        generated_content = message.content[0].text
+        
+        logger.info(f"Claude API successful for page: {page_name} - Session: {session_id}")
+        
+        return jsonify({
+            'success': True,
+            'content': generated_content,
+            'session_id': session_id,
+            'page_type': 'claude-call',
+            'files_processed': list(uploaded_files_data.keys()),
+            'server_files_loaded': list(server_files_data.keys()),
+            'form_fields_received': [k for k in form_data.keys() if k != 'claude_prompt']
+        })
+        
+    except Exception as e:
+        logger.error(f"Claude API error for page {page_name}: {e}")
+        return jsonify({'error': f'Error generating content: {str(e)}'}), 500from flask import Flask, render_template, request, jsonify, session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import anthropic
@@ -77,6 +237,46 @@ def extract_text_from_docx(file_stream):
         logger.error(f"Error extracting text from DOCX: {e}")
         raise ValueError(f"Failed to extract text from Word document: {str(e)}")
 
+def extract_xml_from_docx(file_stream):
+    """Extract full XML structure from Word document"""
+    try:
+        import zipfile
+        import xml.etree.ElementTree as ET
+        
+        # Reset stream position
+        file_stream.seek(0)
+        
+        xml_data = {}
+        
+        with zipfile.ZipFile(file_stream, 'r') as docx_zip:
+            # Get main document XML
+            if 'word/document.xml' in docx_zip.namelist():
+                document_xml = docx_zip.read('word/document.xml').decode('utf-8')
+                xml_data['document'] = document_xml
+            
+            # Get styles XML
+            if 'word/styles.xml' in docx_zip.namelist():
+                styles_xml = docx_zip.read('word/styles.xml').decode('utf-8')
+                xml_data['styles'] = styles_xml
+            
+            # Get core properties
+            if 'docProps/core.xml' in docx_zip.namelist():
+                core_xml = docx_zip.read('docProps/core.xml').decode('utf-8')
+                xml_data['core_properties'] = core_xml
+            
+            # Get app properties
+            if 'docProps/app.xml' in docx_zip.namelist():
+                app_xml = docx_zip.read('docProps/app.xml').decode('utf-8')
+                xml_data['app_properties'] = app_xml
+            
+            # List all files in the archive for reference
+            xml_data['file_list'] = docx_zip.namelist()
+        
+        return xml_data
+    except Exception as e:
+        logger.error(f"Error extracting XML from DOCX: {e}")
+        return {"error": f"Failed to extract XML structure: {str(e)}"}
+
 def extract_text_from_pdf(file_stream):
     """Extract text from PDF document"""
     try:
@@ -100,8 +300,66 @@ def extract_text_from_pdf(file_stream):
         logger.error(f"Error extracting text from PDF: {e}")
         raise ValueError(f"Failed to extract text from PDF document: {str(e)}")
 
+def extract_form_data_from_pdf(file_stream):
+    """Extract form data and metadata from PDF document"""
+    try:
+        # Reset stream position
+        file_stream.seek(0)
+        reader = PyPDF2.PdfReader(file_stream)
+        
+        form_data = {}
+        
+        # Extract form fields if present
+        if reader.get_form_text_fields():
+            form_data['form_fields'] = reader.get_form_text_fields()
+        
+        # Extract metadata
+        if reader.metadata:
+            metadata = {}
+            for key, value in reader.metadata.items():
+                # Convert PyPDF2 metadata keys to readable format
+                clean_key = str(key).replace('/', '').replace('\\', '')
+                metadata[clean_key] = str(value) if value else None
+            form_data['metadata'] = metadata
+        
+        # Extract document info
+        form_data['document_info'] = {
+            'page_count': len(reader.pages),
+            'is_encrypted': reader.is_encrypted,
+            'has_form_fields': bool(reader.get_form_text_fields())
+        }
+        
+        # Extract page-level information
+        page_info = []
+        for page_num, page in enumerate(reader.pages):
+            try:
+                page_data = {
+                    'page_number': page_num + 1,
+                    'rotation': page.rotation if hasattr(page, 'rotation') else 0
+                }
+                
+                # Try to get page dimensions
+                if hasattr(page, 'mediabox'):
+                    mediabox = page.mediabox
+                    page_data['dimensions'] = {
+                        'width': float(mediabox.width),
+                        'height': float(mediabox.height)
+                    }
+                
+                page_info.append(page_data)
+            except Exception as e:
+                logger.warning(f"Error extracting info from page {page_num + 1}: {e}")
+                continue
+        
+        form_data['page_info'] = page_info
+        
+        return form_data
+    except Exception as e:
+        logger.error(f"Error extracting form data from PDF: {e}")
+        return {"error": f"Failed to extract PDF form data: {str(e)}"}
+
 def process_uploaded_file(file):
-    """Process uploaded file and extract text"""
+    """Process uploaded file and extract both content and structure"""
     if not file or not file.filename:
         return None
     
@@ -112,34 +370,80 @@ def process_uploaded_file(file):
         raise ValueError("File is empty")
     
     file_stream = io.BytesIO(file_content)
+    result = {}
     
     if filename.endswith('.docx'):
-        return extract_text_from_docx(file_stream)
+        # Extract both text content and XML structure
+        file_stream.seek(0)
+        result['text_content'] = extract_text_from_docx(file_stream)
+        
+        file_stream.seek(0)
+        result['xml_structure'] = extract_xml_from_docx(file_stream)
+        
+        result['file_type'] = 'docx'
+        
     elif filename.endswith('.pdf'):
-        return extract_text_from_pdf(file_stream)
+        # Extract both text content and form data
+        file_stream.seek(0)
+        result['text_content'] = extract_text_from_pdf(file_stream)
+        
+        file_stream.seek(0)
+        result['form_data'] = extract_form_data_from_pdf(file_stream)
+        
+        result['file_type'] = 'pdf'
+        
+    elif filename.endswith('.txt'):
+        # For text files, just get content
+        result['text_content'] = file_stream.read().decode('utf-8')
+        result['file_type'] = 'txt'
+        
     else:
-        raise ValueError(f"Unsupported file type. Please upload .docx or .pdf files only.")
+        raise ValueError(f"Unsupported file type. Please upload .docx, .pdf, or .txt files only.")
+    
+    return result
 
 def process_server_file(file_path):
-    """Process server-stored file and extract text"""
+    """Process server-stored file and extract both content and structure"""
     if not os.path.exists(file_path):
         return None
     
     filename = file_path.lower()
+    result = {}
     
     try:
         if filename.endswith('.docx'):
             with open(file_path, 'rb') as f:
-                return extract_text_from_docx(f)
+                file_stream = io.BytesIO(f.read())
+                
+                file_stream.seek(0)
+                result['text_content'] = extract_text_from_docx(file_stream)
+                
+                file_stream.seek(0)
+                result['xml_structure'] = extract_xml_from_docx(file_stream)
+                
+                result['file_type'] = 'docx'
+                
         elif filename.endswith('.pdf'):
             with open(file_path, 'rb') as f:
-                return extract_text_from_pdf(f)
+                file_stream = io.BytesIO(f.read())
+                
+                file_stream.seek(0)
+                result['text_content'] = extract_text_from_pdf(file_stream)
+                
+                file_stream.seek(0)
+                result['form_data'] = extract_form_data_from_pdf(file_stream)
+                
+                result['file_type'] = 'pdf'
+                
         elif filename.endswith('.txt'):
             with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
+                result['text_content'] = f.read()
+                result['file_type'] = 'txt'
         else:
             logger.warning(f"Unsupported server file type: {file_path}")
             return None
+            
+        return result
     except Exception as e:
         logger.error(f"Error processing server file {file_path}: {e}")
         return None
@@ -382,12 +686,9 @@ def get_server_files_info(page_name):
 @limiter.limit("5 per minute")
 def generic_api(page_name):
     """Generic API endpoint that handles any page"""
-    if not claude_client:
-        return jsonify({'error': 'Claude API not available'}), 503
-    
     try:
         # Handle file uploads - process all uploaded files
-        uploaded_files_text = {}
+        uploaded_files_data = {}
         
         for field_name in request.files:
             file = request.files[field_name]
@@ -397,17 +698,17 @@ def generic_api(page_name):
                     return jsonify({'error': f'{field_name} error: {message}'}), 400
                 
                 try:
-                    extracted_text = process_uploaded_file(file)
-                    if extracted_text:
+                    file_data = process_uploaded_file(file)
+                    if file_data:
                         # Clean up field name for context
                         clean_field_name = field_name.replace('_file', '').replace('_', ' ')
-                        uploaded_files_text[clean_field_name] = extracted_text
+                        uploaded_files_data[clean_field_name] = file_data
                         logger.info(f"File processed: {file.filename} for field {field_name}")
                 except Exception as e:
                     return jsonify({'error': f'Error processing {field_name}: {str(e)}'}), 400
         
         # Load server files for this page
-        server_files_text = load_server_files(page_name)
+        server_files_data = load_server_files(page_name)
         
         # Handle form data
         form_data = request.form.to_dict()
@@ -415,41 +716,133 @@ def generic_api(page_name):
         
         logger.info(f"API called for page: {page_name} - Session: {session_id}")
         
+        # Check page type based on form data
+        page_type = form_data.get('page_type', 'claude-call')
+        
+        if page_type == 'no-call':
+            # Handle no-call pages (no Claude API, just return organized data)
+            return handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_data, session_id)
+        elif page_type == 'claude-call':
+            # Handle Claude API pages (existing functionality)
+            return handle_claude_call_page(page_name, form_data, uploaded_files_data, server_files_data, session_id)
+        else:
+            return jsonify({'error': f'Unknown page type: {page_type}'}), 400
+    
+    except Exception as e:
+        logger.error(f"Error in API for page {page_name}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+def handle_no_call_page(page_name, form_data, uploaded_files_text, server_files_text, session_id):
+    """Handle no-call pages that organize and display information without API calls"""
+    try:
+        logger.info(f"Processing no-call page: {page_name}")
+        
+        # Build organized content from available data
+        content_sections = []
+        
+        # Add page header
+        page_title = form_data.get('page_title', page_name.replace('-', ' ').title())
+        content_sections.append(f"# {page_title}")
+        content_sections.append("")
+        
+        # Add server reference files
+        if server_files_text:
+            content_sections.append("## Reference Materials")
+            content_sections.append("")
+            for file_name, content in server_files_text.items():
+                content_sections.append(f"### {file_name.title()}")
+                content_sections.append("")
+                # Add truncated preview of content
+                preview = content[:500] + "..." if len(content) > 500 else content
+                content_sections.append(preview)
+                content_sections.append("")
+        
+        # Add form data
+        if form_data:
+            content_sections.append("## Submitted Information")
+            content_sections.append("")
+            for key, value in form_data.items():
+                if key not in ['page_type', 'page_title'] and value.strip():
+                    display_key = key.replace('_', ' ').title()
+                    content_sections.append(f"**{display_key}:** {value}")
+            content_sections.append("")
+        
+        # Add uploaded files
+        if uploaded_files_text:
+            content_sections.append("## Uploaded Documents")
+            content_sections.append("")
+            for file_type, content in uploaded_files_text.items():
+                content_sections.append(f"### {file_type.title()}")
+                content_sections.append("")
+                # Add truncated preview
+                preview = content[:500] + "..." if len(content) > 500 else content
+                content_sections.append(preview)
+                content_sections.append("")
+        
+        # Add summary
+        total_items = len(server_files_text) + len(uploaded_files_text) + len([k for k in form_data.keys() if k not in ['page_type', 'page_title'] and form_data[k].strip()])
+        content_sections.append("## Summary")
+        content_sections.append("")
+        content_sections.append(f"- **Server Reference Files:** {len(server_files_text)}")
+        content_sections.append(f"- **Uploaded Documents:** {len(uploaded_files_text)}")
+        content_sections.append(f"- **Form Fields Completed:** {len([k for k in form_data.keys() if k not in ['page_type', 'page_title'] and form_data[k].strip()])}")
+        content_sections.append(f"- **Total Items Processed:** {total_items}")
+        
+        generated_content = "\n".join(content_sections)
+        
+        logger.info(f"No-call page processed successfully for: {page_name}")
+        
+        return jsonify({
+            'success': True,
+            'content': generated_content,
+            'session_id': session_id,
+            'page_type': 'no-call',
+            'files_processed': list(uploaded_files_text.keys()),
+            'server_files_loaded': list(server_files_text.keys()),
+            'form_fields_received': [k for k in form_data.keys() if k not in ['page_type', 'page_title']]
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in no-call page handler: {e}")
+        return jsonify({'error': 'Error processing no-call page'}), 500
+
+def handle_claude_call_page(page_name, form_data, uploaded_files_text, server_files_text, session_id):
+    """Handle Claude API pages (existing functionality)"""
+    if not claude_client:
+        return jsonify({'error': 'Claude API not available'}), 503
+    
+    try:
         # Build Claude prompt from form data, uploaded files, and server files
         claude_prompt, error = build_claude_prompt(form_data, uploaded_files_text, server_files_text)
         if error:
             return jsonify({'error': error}), 400
         
         # Call Claude API
-        try:
-            message = claude_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=4000,
-                messages=[
-                    {"role": "user", "content": claude_prompt}
-                ]
-            )
-            
-            generated_content = message.content[0].text
-            
-            logger.info(f"Claude API successful for page: {page_name} - Session: {session_id}")
-            
-            return jsonify({
-                'success': True,
-                'content': generated_content,
-                'session_id': session_id,
-                'files_processed': list(uploaded_files_text.keys()),
-                'server_files_loaded': list(server_files_text.keys()),
-                'form_fields_received': [k for k in form_data.keys() if k != 'claude_prompt']
-            })
-            
-        except Exception as e:
-            logger.error(f"Claude API error for page {page_name}: {e}")
-            return jsonify({'error': f'Error generating content: {str(e)}'}), 500
-    
+        message = claude_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=4000,
+            messages=[
+                {"role": "user", "content": claude_prompt}
+            ]
+        )
+        
+        generated_content = message.content[0].text
+        
+        logger.info(f"Claude API successful for page: {page_name} - Session: {session_id}")
+        
+        return jsonify({
+            'success': True,
+            'content': generated_content,
+            'session_id': session_id,
+            'page_type': 'claude-call',
+            'files_processed': list(uploaded_files_text.keys()),
+            'server_files_loaded': list(server_files_text.keys()),
+            'form_fields_received': [k for k in form_data.keys() if k != 'claude_prompt']
+        })
+        
     except Exception as e:
-        logger.error(f"Error in API for page {page_name}: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logger.error(f"Claude API error for page {page_name}: {e}")
+        return jsonify({'error': f'Error generating content: {str(e)}'}), 500
 
 # Error handlers
 @app.errorhandler(413)
