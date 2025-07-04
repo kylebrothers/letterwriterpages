@@ -169,6 +169,9 @@ import uuid
 import io
 from docx import Document
 import PyPDF2
+import zipfile
+import xml.etree.ElementTree as ET
+import json
 
 # Initialize Flask app
 app = Flask(__name__)
