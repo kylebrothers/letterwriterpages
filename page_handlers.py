@@ -1,5 +1,5 @@
 """
-Page handlers for Claude-call and no-call page types
+Page handlers for Claude-call and no-call page types with selective content control
 """
 
 import logging
@@ -9,13 +9,27 @@ from utils import truncate_text, count_form_fields
 
 logger = logging.getLogger(__name__)
 
+def get_content_preferences(form_data):
+    """Parse content preferences from form data"""
+    preferences = {
+        'docx_text': form_data.get('include_docx_text', 'true').lower() == 'true',
+        'docx_xml': form_data.get('include_docx_xml', 'false').lower() == 'true',
+        'pdf_text': form_data.get('include_pdf_text', 'true').lower() == 'true',
+        'pdf_forms': form_data.get('include_pdf_forms', 'false').lower() == 'true',
+        'txt_content': form_data.get('include_txt_content', 'true').lower() == 'true'
+    }
+    return preferences
+
 def build_claude_prompt(form_data, uploaded_files_data, server_files_data):
-    """Build Claude prompt from form data, uploaded files, and server files"""
+    """Build Claude prompt from form data, uploaded files, and server files with selective content"""
     
     # Get the custom prompt from the form
     custom_prompt = form_data.get('claude_prompt', '').strip()
     if not custom_prompt:
         return None, "No Claude prompt provided"
+    
+    # Get content preferences
+    content_prefs = get_content_preferences(form_data)
     
     # Build the context sections
     context_sections = []
@@ -27,43 +41,60 @@ def build_claude_prompt(form_data, uploaded_files_data, server_files_data):
             context_sections.append(f"\n--- {file_name.upper()} ---")
             
             if isinstance(file_data, dict):
-                # Rich file data with structure
-                if 'text_content' in file_data and file_data['text_content']:
-                    context_sections.append("Text Content:")
-                    context_sections.append(str(file_data['text_content']).strip())
+                file_type = file_data.get('file_type', 'unknown')
                 
-                if 'xml_structure' in file_data and file_data['xml_structure']:
-                    context_sections.append("\nDocument Structure (XML):")
-                    xml_structure = file_data['xml_structure']
-                    if isinstance(xml_structure, dict):
-                        for xml_type, xml_content in xml_structure.items():
-                            if xml_type != 'error' and xml_content:
-                                context_sections.append(f"{xml_type.upper()}:")
-                                # Ensure xml_content is a string
-                                xml_str = str(xml_content) if xml_content else ""
-                                # Truncate very long XML for readability
-                                if len(xml_str) > 2000:
-                                    context_sections.append(xml_str[:2000] + "... [truncated]")
-                                else:
-                                    context_sections.append(xml_str)
+                # Handle DOCX files
+                if file_type == 'docx':
+                    if content_prefs['docx_text'] and 'text_content' in file_data and file_data['text_content']:
+                        context_sections.append("Text Content:")
+                        context_sections.append(str(file_data['text_content']).strip())
+                    
+                    if content_prefs['docx_xml'] and 'xml_structure' in file_data and file_data['xml_structure']:
+                        context_sections.append("\nDocument Structure (XML):")
+                        xml_structure = file_data['xml_structure']
+                        if isinstance(xml_structure, dict):
+                            for xml_type, xml_content in xml_structure.items():
+                                if xml_type != 'error' and xml_content:
+                                    context_sections.append(f"{xml_type.upper()}:")
+                                    xml_str = str(xml_content) if xml_content else ""
+                                    if len(xml_str) > 2000:
+                                        context_sections.append(xml_str[:2000] + "... [truncated]")
+                                    else:
+                                        context_sections.append(xml_str)
                 
-                if 'form_data' in file_data and file_data['form_data']:
-                    context_sections.append("\nPDF Form Data and Metadata:")
-                    try:
-                        # Safely convert form_data to JSON string
-                        form_data_str = json.dumps(file_data['form_data'], indent=2, default=str)
-                        context_sections.append(form_data_str)
-                    except Exception as e:
-                        logger.warning(f"Could not serialize PDF form data: {e}")
-                        context_sections.append(str(file_data['form_data']))
+                # Handle PDF files
+                elif file_type == 'pdf':
+                    if content_prefs['pdf_text'] and 'text_content' in file_data and file_data['text_content']:
+                        context_sections.append("Text Content:")
+                        context_sections.append(str(file_data['text_content']).strip())
+                    
+                    if content_prefs['pdf_forms'] and 'form_data' in file_data and file_data['form_data']:
+                        context_sections.append("\nPDF Form Data and Metadata:")
+                        try:
+                            form_data_str = json.dumps(file_data['form_data'], indent=2, default=str)
+                            context_sections.append(form_data_str)
+                        except Exception as e:
+                            logger.warning(f"Could not serialize PDF form data: {e}")
+                            context_sections.append(str(file_data['form_data']))
+                
+                # Handle TXT files
+                elif file_type == 'txt':
+                    if content_prefs['txt_content'] and 'text_content' in file_data and file_data['text_content']:
+                        context_sections.append("Text Content:")
+                        context_sections.append(str(file_data['text_content']).strip())
+                
             else:
-                # Legacy text-only data
+                # Legacy text-only data - always include for backward compatibility
                 context_sections.append(str(file_data).strip())
     
-    # Add form data (excluding the prompt itself)
+    # Add form data (excluding the prompt itself and content preferences)
+    excluded_keys = ['claude_prompt', 'page_type', 'page_title', 
+                     'include_docx_text', 'include_docx_xml', 'include_pdf_text', 
+                     'include_pdf_forms', 'include_txt_content']
+    
     form_context = {}
     for key, value in form_data.items():
-        if key not in ['claude_prompt', 'page_type', 'page_title'] and str(value).strip():
+        if key not in excluded_keys and str(value).strip():
             form_context[key] = str(value).strip()
     
     if form_context:
@@ -79,37 +110,50 @@ def build_claude_prompt(form_data, uploaded_files_data, server_files_data):
                 context_sections.append(f"\n=== UPLOADED {file_type.upper()} CONTENT ===")
                 
                 if isinstance(file_data, dict):
-                    # Rich file data with structure
-                    if 'text_content' in file_data and file_data['text_content']:
-                        context_sections.append("Text Content:")
-                        context_sections.append(str(file_data['text_content']).strip())
+                    data_file_type = file_data.get('file_type', 'unknown')
                     
-                    if 'xml_structure' in file_data and file_data['xml_structure']:
-                        context_sections.append("\nDocument Structure (XML):")
-                        xml_structure = file_data['xml_structure']
-                        if isinstance(xml_structure, dict):
-                            for xml_type, xml_content in xml_structure.items():
-                                if xml_type != 'error' and xml_content:
-                                    context_sections.append(f"{xml_type.upper()}:")
-                                    # Ensure xml_content is a string
-                                    xml_str = str(xml_content) if xml_content else ""
-                                    # Truncate very long XML for readability
-                                    if len(xml_str) > 2000:
-                                        context_sections.append(xml_str[:2000] + "... [truncated]")
-                                    else:
-                                        context_sections.append(xml_str)
+                    # Handle uploaded DOCX files
+                    if data_file_type == 'docx':
+                        if content_prefs['docx_text'] and 'text_content' in file_data and file_data['text_content']:
+                            context_sections.append("Text Content:")
+                            context_sections.append(str(file_data['text_content']).strip())
+                        
+                        if content_prefs['docx_xml'] and 'xml_structure' in file_data and file_data['xml_structure']:
+                            context_sections.append("\nDocument Structure (XML):")
+                            xml_structure = file_data['xml_structure']
+                            if isinstance(xml_structure, dict):
+                                for xml_type, xml_content in xml_structure.items():
+                                    if xml_type != 'error' and xml_content:
+                                        context_sections.append(f"{xml_type.upper()}:")
+                                        xml_str = str(xml_content) if xml_content else ""
+                                        if len(xml_str) > 2000:
+                                            context_sections.append(xml_str[:2000] + "... [truncated]")
+                                        else:
+                                            context_sections.append(xml_str)
                     
-                    if 'form_data' in file_data and file_data['form_data']:
-                        context_sections.append("\nPDF Form Data and Metadata:")
-                        try:
-                            # Safely convert form_data to JSON string
-                            form_data_str = json.dumps(file_data['form_data'], indent=2, default=str)
-                            context_sections.append(form_data_str)
-                        except Exception as e:
-                            logger.warning(f"Could not serialize PDF form data: {e}")
-                            context_sections.append(str(file_data['form_data']))
+                    # Handle uploaded PDF files
+                    elif data_file_type == 'pdf':
+                        if content_prefs['pdf_text'] and 'text_content' in file_data and file_data['text_content']:
+                            context_sections.append("Text Content:")
+                            context_sections.append(str(file_data['text_content']).strip())
+                        
+                        if content_prefs['pdf_forms'] and 'form_data' in file_data and file_data['form_data']:
+                            context_sections.append("\nPDF Form Data and Metadata:")
+                            try:
+                                form_data_str = json.dumps(file_data['form_data'], indent=2, default=str)
+                                context_sections.append(form_data_str)
+                            except Exception as e:
+                                logger.warning(f"Could not serialize PDF form data: {e}")
+                                context_sections.append(str(file_data['form_data']))
+                    
+                    # Handle uploaded TXT files
+                    elif data_file_type == 'txt':
+                        if content_prefs['txt_content'] and 'text_content' in file_data and file_data['text_content']:
+                            context_sections.append("Text Content:")
+                            context_sections.append(str(file_data['text_content']).strip())
+                    
                 else:
-                    # Legacy text-only data
+                    # Legacy text-only data - always include for backward compatibility
                     context_sections.append(str(file_data).strip())
     
     # Ensure all items in context_sections are strings
@@ -118,7 +162,6 @@ def build_claude_prompt(form_data, uploaded_files_data, server_files_data):
         if isinstance(section, str):
             cleaned_sections.append(section)
         else:
-            # Convert non-strings to strings
             cleaned_sections.append(str(section))
     
     # Combine everything
@@ -134,6 +177,9 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
     try:
         logger.info(f"Processing no-call page: {page_name}")
         
+        # Get content preferences
+        content_prefs = get_content_preferences(form_data)
+        
         # Build organized content from available data
         content_sections = []
         
@@ -142,7 +188,17 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
         content_sections.append(f"# {page_title}")
         content_sections.append("")
         
-        # Add server reference files with rich data
+        # Add content preferences summary
+        content_sections.append("## Content Processing Settings")
+        content_sections.append("")
+        content_sections.append(f"- **DOCX Text Content:** {'Included' if content_prefs['docx_text'] else 'Excluded'}")
+        content_sections.append(f"- **DOCX XML Structure:** {'Included' if content_prefs['docx_xml'] else 'Excluded'}")
+        content_sections.append(f"- **PDF Text Content:** {'Included' if content_prefs['pdf_text'] else 'Excluded'}")
+        content_sections.append(f"- **PDF Form Data:** {'Included' if content_prefs['pdf_forms'] else 'Excluded'}")
+        content_sections.append(f"- **TXT Content:** {'Included' if content_prefs['txt_content'] else 'Excluded'}")
+        content_sections.append("")
+        
+        # Add server reference files with selective content
         if server_files_data:
             content_sections.append("## Reference Materials")
             content_sections.append("")
@@ -151,23 +207,42 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
                 content_sections.append("")
                 
                 if isinstance(file_data, dict):
-                    # Rich file data
-                    content_sections.append(f"**File Type:** {file_data.get('file_type', 'unknown').upper()}")
+                    file_type = file_data.get('file_type', 'unknown')
+                    content_sections.append(f"**File Type:** {file_type.upper()}")
+                    
+                    # Show what content types are available and included
+                    available_content = []
+                    included_content = []
                     
                     if 'text_content' in file_data and file_data['text_content']:
-                        content_sections.append("**Text Content Preview:**")
-                        preview = truncate_text(str(file_data['text_content']), 500)
-                        content_sections.append(preview)
+                        available_content.append("Text Content")
+                        if ((file_type == 'docx' and content_prefs['docx_text']) or 
+                            (file_type == 'pdf' and content_prefs['pdf_text']) or 
+                            (file_type == 'txt' and content_prefs['txt_content'])):
+                            included_content.append("Text Content")
                     
-                    if 'xml_structure' in file_data and file_data['xml_structure']:
-                        content_sections.append("**Document Structure Available:** Yes (XML)")
+                    if file_type == 'docx' and 'xml_structure' in file_data and file_data['xml_structure']:
+                        available_content.append("XML Structure")
+                        if content_prefs['docx_xml']:
+                            included_content.append("XML Structure")
                     
-                    if 'form_data' in file_data and file_data['form_data']:
-                        content_sections.append("**PDF Form Data Available:** Yes")
-                        if 'document_info' in file_data['form_data']:
-                            doc_info = file_data['form_data']['document_info']
-                            content_sections.append(f"- Pages: {doc_info.get('page_count', 'unknown')}")
-                            content_sections.append(f"- Has Form Fields: {doc_info.get('has_form_fields', False)}")
+                    if file_type == 'pdf' and 'form_data' in file_data and file_data['form_data']:
+                        available_content.append("Form Data")
+                        if content_prefs['pdf_forms']:
+                            included_content.append("Form Data")
+                    
+                    if available_content:
+                        content_sections.append(f"**Available Content:** {', '.join(available_content)}")
+                        content_sections.append(f"**Included Content:** {', '.join(included_content) if included_content else 'None'}")
+                    
+                    # Show preview of included content
+                    if included_content and 'text_content' in file_data and file_data['text_content']:
+                        if ((file_type == 'docx' and content_prefs['docx_text']) or 
+                            (file_type == 'pdf' and content_prefs['pdf_text']) or 
+                            (file_type == 'txt' and content_prefs['txt_content'])):
+                            content_sections.append("**Text Content Preview:**")
+                            preview = truncate_text(str(file_data['text_content']), 500)
+                            content_sections.append(preview)
                 else:
                     # Legacy text data
                     preview = truncate_text(str(file_data), 500)
@@ -175,17 +250,19 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
                 
                 content_sections.append("")
         
-        # Add form data
+        # Add form data (excluding content preferences)
         if form_data:
             content_sections.append("## Submitted Information")
             content_sections.append("")
+            excluded_keys = ['page_type', 'page_title', 'include_docx_text', 'include_docx_xml', 
+                           'include_pdf_text', 'include_pdf_forms', 'include_txt_content']
             for key, value in form_data.items():
-                if key not in ['page_type', 'page_title'] and str(value).strip():
+                if key not in excluded_keys and str(value).strip():
                     display_key = key.replace('_', ' ').title()
                     content_sections.append(f"**{display_key}:** {value}")
             content_sections.append("")
         
-        # Add uploaded files with rich data
+        # Add uploaded files with selective content
         if uploaded_files_data:
             content_sections.append("## Uploaded Documents")
             content_sections.append("")
@@ -194,33 +271,28 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
                 content_sections.append("")
                 
                 if isinstance(file_data, dict):
-                    # Rich file data
-                    content_sections.append(f"**File Type:** {file_data.get('file_type', 'unknown').upper()}")
+                    data_file_type = file_data.get('file_type', 'unknown')
+                    content_sections.append(f"**File Type:** {data_file_type.upper()}")
                     
+                    # Show content processing status
+                    if data_file_type == 'docx':
+                        content_sections.append(f"**Text Content:** {'Processed' if content_prefs['docx_text'] else 'Skipped'}")
+                        content_sections.append(f"**XML Structure:** {'Processed' if content_prefs['docx_xml'] else 'Skipped'}")
+                    elif data_file_type == 'pdf':
+                        content_sections.append(f"**Text Content:** {'Processed' if content_prefs['pdf_text'] else 'Skipped'}")
+                        content_sections.append(f"**Form Data:** {'Processed' if content_prefs['pdf_forms'] else 'Skipped'}")
+                    elif data_file_type == 'txt':
+                        content_sections.append(f"**Content:** {'Processed' if content_prefs['txt_content'] else 'Skipped'}")
+                    
+                    # Show preview if content was processed
                     if 'text_content' in file_data and file_data['text_content']:
-                        content_sections.append("**Text Content Preview:**")
-                        preview = truncate_text(str(file_data['text_content']), 500)
-                        content_sections.append(preview)
-                    
-                    if 'xml_structure' in file_data and file_data['xml_structure']:
-                        content_sections.append("**Document Structure:** Available")
-                        xml_structure = file_data['xml_structure']
-                        if isinstance(xml_structure, dict):
-                            xml_files = list(xml_structure.keys())
-                            if 'error' in xml_files:
-                                xml_files.remove('error')
-                            content_sections.append(f"- XML Components: {', '.join(xml_files)}")
-                    
-                    if 'form_data' in file_data and file_data['form_data']:
-                        content_sections.append("**PDF Analysis:**")
-                        if 'document_info' in file_data['form_data']:
-                            doc_info = file_data['form_data']['document_info']
-                            content_sections.append(f"- Pages: {doc_info.get('page_count', 'unknown')}")
-                            content_sections.append(f"- Encrypted: {doc_info.get('is_encrypted', False)}")
-                            content_sections.append(f"- Has Form Fields: {doc_info.get('has_form_fields', False)}")
-                        
-                        if 'metadata' in file_data['form_data'] and file_data['form_data']['metadata']:
-                            content_sections.append("- Metadata: Available")
+                        should_show_text = ((data_file_type == 'docx' and content_prefs['docx_text']) or 
+                                          (data_file_type == 'pdf' and content_prefs['pdf_text']) or 
+                                          (data_file_type == 'txt' and content_prefs['txt_content']))
+                        if should_show_text:
+                            content_sections.append("**Text Content Preview:**")
+                            preview = truncate_text(str(file_data['text_content']), 500)
+                            content_sections.append(preview)
                 else:
                     # Legacy text data
                     preview = truncate_text(str(file_data), 500)
@@ -229,12 +301,12 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
                 content_sections.append("")
         
         # Add summary
-        total_items = len(server_files_data) + len(uploaded_files_data) + count_form_fields(form_data)
+        total_items = len(server_files_data) + len(uploaded_files_data) + count_form_fields(form_data, exclude_keys=['page_type', 'page_title', 'include_docx_text', 'include_docx_xml', 'include_pdf_text', 'include_pdf_forms', 'include_txt_content'])
         content_sections.append("## Summary")
         content_sections.append("")
         content_sections.append(f"- **Server Reference Files:** {len(server_files_data)}")
         content_sections.append(f"- **Uploaded Documents:** {len(uploaded_files_data)}")
-        content_sections.append(f"- **Form Fields Completed:** {count_form_fields(form_data)}")
+        content_sections.append(f"- **Form Fields Completed:** {count_form_fields(form_data, exclude_keys=['page_type', 'page_title', 'include_docx_text', 'include_docx_xml', 'include_pdf_text', 'include_pdf_forms', 'include_txt_content'])}")
         content_sections.append(f"- **Total Items Processed:** {total_items}")
         
         generated_content = "\n".join(content_sections)
@@ -248,7 +320,8 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
             'page_type': 'no-call',
             'files_processed': list(uploaded_files_data.keys()),
             'server_files_loaded': list(server_files_data.keys()),
-            'form_fields_received': [k for k in form_data.keys() if k not in ['page_type', 'page_title']]
+            'form_fields_received': [k for k in form_data.keys() if k not in ['page_type', 'page_title']],
+            'content_preferences': content_prefs
         })
         
     except Exception as e:
@@ -279,6 +352,9 @@ def handle_claude_call_page(page_name, form_data, uploaded_files_data, server_fi
         
         logger.info(f"Claude API successful for page: {page_name} - Session: {session_id}")
         
+        # Get content preferences for response metadata
+        content_prefs = get_content_preferences(form_data)
+        
         return jsonify({
             'success': True,
             'content': generated_content,
@@ -286,7 +362,8 @@ def handle_claude_call_page(page_name, form_data, uploaded_files_data, server_fi
             'page_type': 'claude-call',
             'files_processed': list(uploaded_files_data.keys()),
             'server_files_loaded': list(server_files_data.keys()),
-            'form_fields_received': [k for k in form_data.keys() if k != 'claude_prompt']
+            'form_fields_received': [k for k in form_data.keys() if k != 'claude_prompt'],
+            'content_preferences': content_prefs
         })
         
     except Exception as e:
