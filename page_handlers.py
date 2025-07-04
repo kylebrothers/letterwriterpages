@@ -5,6 +5,7 @@ Page handlers for Claude-call and no-call page types
 import logging
 import json
 from flask import jsonify
+from utils import truncate_text, count_form_fields
 
 logger = logging.getLogger(__name__)
 
@@ -27,25 +28,34 @@ def build_claude_prompt(form_data, uploaded_files_data, server_files_data):
             
             if isinstance(file_data, dict):
                 # Rich file data with structure
-                if 'text_content' in file_data:
+                if 'text_content' in file_data and file_data['text_content']:
                     context_sections.append("Text Content:")
-                    context_sections.append(file_data['text_content'].strip())
+                    context_sections.append(str(file_data['text_content']).strip())
                 
                 if 'xml_structure' in file_data and file_data['xml_structure']:
                     context_sections.append("\nDocument Structure (XML):")
-                    if isinstance(file_data['xml_structure'], dict):
-                        for xml_type, xml_content in file_data['xml_structure'].items():
+                    xml_structure = file_data['xml_structure']
+                    if isinstance(xml_structure, dict):
+                        for xml_type, xml_content in xml_structure.items():
                             if xml_type != 'error' and xml_content:
                                 context_sections.append(f"{xml_type.upper()}:")
+                                # Ensure xml_content is a string
+                                xml_str = str(xml_content) if xml_content else ""
                                 # Truncate very long XML for readability
-                                if len(xml_content) > 2000:
-                                    context_sections.append(xml_content[:2000] + "... [truncated]")
+                                if len(xml_str) > 2000:
+                                    context_sections.append(xml_str[:2000] + "... [truncated]")
                                 else:
-                                    context_sections.append(xml_content)
+                                    context_sections.append(xml_str)
                 
                 if 'form_data' in file_data and file_data['form_data']:
                     context_sections.append("\nPDF Form Data and Metadata:")
-                    context_sections.append(json.dumps(file_data['form_data'], indent=2))
+                    try:
+                        # Safely convert form_data to JSON string
+                        form_data_str = json.dumps(file_data['form_data'], indent=2, default=str)
+                        context_sections.append(form_data_str)
+                    except Exception as e:
+                        logger.warning(f"Could not serialize PDF form data: {e}")
+                        context_sections.append(str(file_data['form_data']))
             else:
                 # Legacy text-only data
                 context_sections.append(str(file_data).strip())
@@ -53,13 +63,14 @@ def build_claude_prompt(form_data, uploaded_files_data, server_files_data):
     # Add form data (excluding the prompt itself)
     form_context = {}
     for key, value in form_data.items():
-        if key not in ['claude_prompt', 'page_type', 'page_title'] and value.strip():
-            form_context[key] = value.strip()
+        if key not in ['claude_prompt', 'page_type', 'page_title'] and str(value).strip():
+            form_context[key] = str(value).strip()
     
     if form_context:
         context_sections.append("\n=== FORM DATA ===")
         for key, value in form_context.items():
-            context_sections.append(f"{key.replace('_', ' ').title()}: {value}")
+            clean_key = key.replace('_', ' ').title()
+            context_sections.append(f"{clean_key}: {value}")
     
     # Add uploaded file contents
     if uploaded_files_data:
@@ -69,32 +80,50 @@ def build_claude_prompt(form_data, uploaded_files_data, server_files_data):
                 
                 if isinstance(file_data, dict):
                     # Rich file data with structure
-                    if 'text_content' in file_data:
+                    if 'text_content' in file_data and file_data['text_content']:
                         context_sections.append("Text Content:")
-                        context_sections.append(file_data['text_content'].strip())
+                        context_sections.append(str(file_data['text_content']).strip())
                     
                     if 'xml_structure' in file_data and file_data['xml_structure']:
                         context_sections.append("\nDocument Structure (XML):")
-                        if isinstance(file_data['xml_structure'], dict):
-                            for xml_type, xml_content in file_data['xml_structure'].items():
+                        xml_structure = file_data['xml_structure']
+                        if isinstance(xml_structure, dict):
+                            for xml_type, xml_content in xml_structure.items():
                                 if xml_type != 'error' and xml_content:
                                     context_sections.append(f"{xml_type.upper()}:")
+                                    # Ensure xml_content is a string
+                                    xml_str = str(xml_content) if xml_content else ""
                                     # Truncate very long XML for readability
-                                    if len(xml_content) > 2000:
-                                        context_sections.append(xml_content[:2000] + "... [truncated]")
+                                    if len(xml_str) > 2000:
+                                        context_sections.append(xml_str[:2000] + "... [truncated]")
                                     else:
-                                        context_sections.append(xml_content)
+                                        context_sections.append(xml_str)
                     
                     if 'form_data' in file_data and file_data['form_data']:
                         context_sections.append("\nPDF Form Data and Metadata:")
-                        context_sections.append(json.dumps(file_data['form_data'], indent=2))
+                        try:
+                            # Safely convert form_data to JSON string
+                            form_data_str = json.dumps(file_data['form_data'], indent=2, default=str)
+                            context_sections.append(form_data_str)
+                        except Exception as e:
+                            logger.warning(f"Could not serialize PDF form data: {e}")
+                            context_sections.append(str(file_data['form_data']))
                 else:
                     # Legacy text-only data
                     context_sections.append(str(file_data).strip())
     
+    # Ensure all items in context_sections are strings
+    cleaned_sections = []
+    for section in context_sections:
+        if isinstance(section, str):
+            cleaned_sections.append(section)
+        else:
+            # Convert non-strings to strings
+            cleaned_sections.append(str(section))
+    
     # Combine everything
-    if context_sections:
-        full_prompt = "\n".join(context_sections) + "\n\n" + custom_prompt
+    if cleaned_sections:
+        full_prompt = "\n".join(cleaned_sections) + "\n\n" + custom_prompt
     else:
         full_prompt = custom_prompt
     
@@ -125,9 +154,9 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
                     # Rich file data
                     content_sections.append(f"**File Type:** {file_data.get('file_type', 'unknown').upper()}")
                     
-                    if 'text_content' in file_data:
+                    if 'text_content' in file_data and file_data['text_content']:
                         content_sections.append("**Text Content Preview:**")
-                        preview = file_data['text_content'][:500] + "..." if len(file_data['text_content']) > 500 else file_data['text_content']
+                        preview = truncate_text(str(file_data['text_content']), 500)
                         content_sections.append(preview)
                     
                     if 'xml_structure' in file_data and file_data['xml_structure']:
@@ -141,7 +170,7 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
                             content_sections.append(f"- Has Form Fields: {doc_info.get('has_form_fields', False)}")
                 else:
                     # Legacy text data
-                    preview = str(file_data)[:500] + "..." if len(str(file_data)) > 500 else str(file_data)
+                    preview = truncate_text(str(file_data), 500)
                     content_sections.append(preview)
                 
                 content_sections.append("")
@@ -151,7 +180,7 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
             content_sections.append("## Submitted Information")
             content_sections.append("")
             for key, value in form_data.items():
-                if key not in ['page_type', 'page_title'] and value.strip():
+                if key not in ['page_type', 'page_title'] and str(value).strip():
                     display_key = key.replace('_', ' ').title()
                     content_sections.append(f"**{display_key}:** {value}")
             content_sections.append("")
@@ -168,17 +197,19 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
                     # Rich file data
                     content_sections.append(f"**File Type:** {file_data.get('file_type', 'unknown').upper()}")
                     
-                    if 'text_content' in file_data:
+                    if 'text_content' in file_data and file_data['text_content']:
                         content_sections.append("**Text Content Preview:**")
-                        preview = file_data['text_content'][:500] + "..." if len(file_data['text_content']) > 500 else file_data['text_content']
+                        preview = truncate_text(str(file_data['text_content']), 500)
                         content_sections.append(preview)
                     
                     if 'xml_structure' in file_data and file_data['xml_structure']:
                         content_sections.append("**Document Structure:** Available")
-                        xml_files = list(file_data['xml_structure'].keys())
-                        if 'error' in xml_files:
-                            xml_files.remove('error')
-                        content_sections.append(f"- XML Components: {', '.join(xml_files)}")
+                        xml_structure = file_data['xml_structure']
+                        if isinstance(xml_structure, dict):
+                            xml_files = list(xml_structure.keys())
+                            if 'error' in xml_files:
+                                xml_files.remove('error')
+                            content_sections.append(f"- XML Components: {', '.join(xml_files)}")
                     
                     if 'form_data' in file_data and file_data['form_data']:
                         content_sections.append("**PDF Analysis:**")
@@ -192,18 +223,18 @@ def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_
                             content_sections.append("- Metadata: Available")
                 else:
                     # Legacy text data
-                    preview = str(file_data)[:500] + "..." if len(str(file_data)) > 500 else str(file_data)
+                    preview = truncate_text(str(file_data), 500)
                     content_sections.append(preview)
                 
                 content_sections.append("")
         
         # Add summary
-        total_items = len(server_files_data) + len(uploaded_files_data) + len([k for k in form_data.keys() if k not in ['page_type', 'page_title'] and form_data[k].strip()])
+        total_items = len(server_files_data) + len(uploaded_files_data) + count_form_fields(form_data)
         content_sections.append("## Summary")
         content_sections.append("")
         content_sections.append(f"- **Server Reference Files:** {len(server_files_data)}")
         content_sections.append(f"- **Uploaded Documents:** {len(uploaded_files_data)}")
-        content_sections.append(f"- **Form Fields Completed:** {len([k for k in form_data.keys() if k not in ['page_type', 'page_title'] and form_data[k].strip()])}")
+        content_sections.append(f"- **Form Fields Completed:** {count_form_fields(form_data)}")
         content_sections.append(f"- **Total Items Processed:** {total_items}")
         
         generated_content = "\n".join(content_sections)
