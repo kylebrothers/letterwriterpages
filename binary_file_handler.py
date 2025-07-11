@@ -21,6 +21,10 @@ def serve_binary_file(page_name, filename):
         Flask response with file content or 404 error
     """
     try:
+        # URL decode the filename (handle spaces and special characters)
+        from urllib.parse import unquote
+        filename = unquote(filename)
+        
         # Construct safe path to file
         base_path = "/app/server_files"
         file_path = safe_join(base_path, page_name, filename)
