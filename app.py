@@ -11,6 +11,7 @@ from config import create_app, setup_logging, setup_rate_limiter, setup_claude_c
 from file_processors import process_uploaded_file, validate_file, load_server_files
 from page_handlers import handle_no_call_page, handle_claude_call_page
 from utils import get_session_id, get_server_files_info
+from binary_file_handler import serve_binary_file, list_binary_files
 
 # Initialize application components
 app = create_app()
