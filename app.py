@@ -2,7 +2,7 @@
 Main Flask application - routes and error handlers only
 """
 
-from flask import render_template, request, jsonify, session
+from flask import render_template, request, jsonify, session, send_file, abort
 from datetime import datetime
 import os
 
@@ -119,6 +119,19 @@ def generic_api(page_name):
     except Exception as e:
         logger.error(f"Error in API for page {page_name}: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/<page_name>/file/<filename>', methods=['GET'])
+def serve_page_file(page_name, filename):
+    """Serve binary files from server_files directory"""
+    logger.info(f"Binary file request: {page_name}/{filename}")
+    return serve_binary_file(page_name, filename)
+
+@app.route('/api/<page_name>/files', methods=['GET'])
+def list_page_files(page_name):
+    """List available binary files for a page"""
+    extensions = request.args.getlist('ext')  # e.g., ?ext=.docx&ext=.pdf
+    files = list_binary_files(page_name, extensions if extensions else None)
+    return jsonify({'files': files})
 
 # Error handlers
 @app.errorhandler(413)
