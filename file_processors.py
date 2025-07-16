@@ -266,69 +266,43 @@ def validate_file(file):
     
     return True, "File is valid"
 
-def load_server_files(page_name, additional_dirs=None):
-    """
-    Load all files from the server directory for this page and optionally from additional directories
-    
-    Args:
-        page_name: The primary page name
-        additional_dirs: List of additional directory names to load files from
-    
-    Returns:
-        Dictionary of loaded files with directory prefix for files from additional directories
-    """
+def load_server_files(page_name):
+    """Load all files from the server directory for this page"""
     server_files = {}
+    server_dir = f"/app/server_files/{page_name}"
     
-    # Always load from the primary page directory
-    all_dirs = [page_name]
+    logger.info(f"Looking for server files in: {server_dir}")
     
-    # Add any additional directories
-    if additional_dirs:
-        all_dirs.extend(additional_dirs)
+    if not os.path.exists(server_dir):
+        logger.warning(f"No server files directory found for page: {page_name} at path: {server_dir}")
+        return server_files
     
-    for dir_name in all_dirs:
-        server_dir = f"/app/server_files/{dir_name}"
+    try:
+        all_files = os.listdir(server_dir)
+        logger.info(f"Files found in directory: {all_files}")
         
-        logger.info(f"Looking for server files in: {server_dir}")
-        
-        if not os.path.exists(server_dir):
-            logger.warning(f"No server files directory found for: {dir_name} at path: {server_dir}")
-            continue
-        
-        try:
-            all_files = os.listdir(server_dir)
-            logger.info(f"Files found in {dir_name} directory: {all_files}")
+        for filename in all_files:
+            file_path = os.path.join(server_dir, filename)
+            logger.info(f"Processing file: {file_path}")
             
-            for filename in all_files:
-                file_path = os.path.join(server_dir, filename)
-                logger.info(f"Processing file: {file_path}")
-                
-                if os.path.isfile(file_path):
-                    logger.info(f"File {filename} is a regular file, attempting to process...")
-                    file_data = process_server_file(file_path)
-                    if file_data:
-                        # Create a unique key for the file
-                        if dir_name == page_name:
-                            # Files from primary directory don't need prefix
-                            file_key = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ')
-                        else:
-                            # Files from additional directories get prefixed
-                            file_key = f"[{dir_name}] {os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ')}"
-                        
-                        server_files[file_key] = file_data
-                        logger.info(f"Successfully loaded server file: {filename} as key: {file_key}")
-                    else:
-                        logger.warning(f"Failed to extract content from file: {filename}")
+            if os.path.isfile(file_path):
+                logger.info(f"File {filename} is a regular file, attempting to process...")
+                file_data = process_server_file(file_path)
+                if file_data:
+                    # Use filename without extension as key
+                    file_key = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ')
+                    server_files[file_key] = file_data
+                    logger.info(f"Successfully loaded server file: {filename} as key: {file_key}")
                 else:
-                    logger.info(f"Skipping {filename} - not a regular file")
-            
-            logger.info(f"Total files loaded from {dir_name}: {len([k for k in server_files.keys() if dir_name in k or dir_name == page_name])}")
-            
-        except Exception as e:
-            logger.error(f"Error loading server files from {dir_name}: {e}")
-    
-    logger.info(f"Total server files loaded across all directories: {len(server_files)}")
-    if server_files:
-        logger.info(f"Server file keys: {list(server_files.keys())}")
+                    logger.warning(f"Failed to extract content from file: {filename}")
+            else:
+                logger.info(f"Skipping {filename} - not a regular file")
+        
+        logger.info(f"Total server files loaded for page {page_name}: {len(server_files)}")
+        if server_files:
+            logger.info(f"Server file keys: {list(server_files.keys())}")
+        
+    except Exception as e:
+        logger.error(f"Error loading server files for page {page_name}: {e}")
     
     return server_files
