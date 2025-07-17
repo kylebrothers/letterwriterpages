@@ -153,4 +153,12 @@ def truncate_text(text, max_length=500):
     return text[:max_length] + "..."
 
 def count_form_fields(form_data, exclude_keys=None):
-    """Count non-empty form fields,
+    """Count non-empty form fields, excluding specified keys"""
+    if exclude_keys is None:
+        exclude_keys = ['page_type', 'page_title', 'claude_prompt']
+    
+    count = 0
+    for key, value in form_data.items():
+        if key not in exclude_keys and str(value).strip():
+            count += 1
+    return count
