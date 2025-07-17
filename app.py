@@ -5,6 +5,8 @@ Main Flask application - routes and error handlers only
 from flask import render_template, request, jsonify, session, send_file, abort
 from datetime import datetime
 import os
+import re
+import json
 
 # Import our modular components
 from config import create_app, setup_logging, setup_rate_limiter, setup_claude_client, ensure_directories
@@ -56,9 +58,33 @@ def generic_page(page_name):
     # Convert URL format to template format (e.g., chairs-promotion-letter -> chairs_promotion_letter.html)
     template_name = page_name.replace('-', '_') + '.html'
     
+    # Check if template specifies additional server directories
+    directories_to_load = [page_name]  # Always include the page's own directory
+    try:
+        template_path = os.path.join(app.template_folder, template_name)
+        if os.path.exists(template_path):
+            with open(template_path, 'r') as f:
+                content = f.read()
+                # Look for server_dirs_config in the template
+                config_match = re.search(r'<script[^>]*id="server_dirs_config"[^>]*>(.*?)</script>', content, re.DOTALL)
+                if config_match:
+                    try:
+                        config_json = config_match.group(1).strip()
+                        config = json.loads(config_json)
+                        if isinstance(config, dict) and 'directories' in config:
+                            # Add specified directories (but keep page directory first)
+                            for dir_name in config['directories']:
+                                if dir_name not in directories_to_load:
+                                    directories_to_load.append(dir_name)
+                            logger.info(f"Page {page_name} loading from directories: {directories_to_load}")
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid JSON in server_dirs_config for {page_name}")
+    except Exception as e:
+        logger.warning(f"Error checking template for server_dirs_config: {e}")
+    
     # Load server files for this page to show on the page
     try:
-        server_files_info = get_server_files_info(page_name)
+        server_files_info = get_server_files_info(page_name, directories_to_load)
         logger.info(f"Server files info loaded for {page_name}: {len(server_files_info)} files")
     except Exception as e:
         logger.error(f"Error loading server files info for {page_name}: {e}")
@@ -95,8 +121,31 @@ def generic_api(page_name):
                 except Exception as e:
                     return jsonify({'error': f'Error processing {field_name}: {str(e)}'}), 400
         
+        # Check if this page specifies additional server directories
+        directories_to_load = [page_name]  # Always include the page's own directory
+        template_name = page_name.replace('-', '_') + '.html'
+        try:
+            template_path = os.path.join(app.template_folder, template_name)
+            if os.path.exists(template_path):
+                with open(template_path, 'r') as f:
+                    content = f.read()
+                    config_match = re.search(r'<script[^>]*id="server_dirs_config"[^>]*>(.*?)</script>', content, re.DOTALL)
+                    if config_match:
+                        try:
+                            config_json = config_match.group(1).strip()
+                            config = json.loads(config_json)
+                            if isinstance(config, dict) and 'directories' in config:
+                                for dir_name in config['directories']:
+                                    if dir_name not in directories_to_load:
+                                        directories_to_load.append(dir_name)
+                                logger.info(f"API for {page_name} loading from directories: {directories_to_load}")
+                        except json.JSONDecodeError:
+                            logger.warning(f"Invalid JSON in server_dirs_config for {page_name}")
+        except Exception as e:
+            logger.warning(f"Error checking template for server_dirs_config: {e}")
+        
         # Load server files for this page
-        server_files_data = load_server_files(page_name)
+        server_files_data = load_server_files(page_name, directories_to_load)
         
         # Handle form data
         form_data = request.form.to_dict()
