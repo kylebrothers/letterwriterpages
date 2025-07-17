@@ -15,78 +15,99 @@ def get_session_id():
         session['session_id'] = str(uuid.uuid4())
     return session['session_id']
 
-def get_server_files_info(page_name):
-    """Get information about available server files for display"""
+def get_server_files_info(page_name, directories=None):
+    """Get information about available server files for display
+    
+    Args:
+        page_name: The name of the current page
+        directories: Optional list of directories to load from. If None, loads only from page_name directory
+    
+    Returns:
+        list: File information with source directory noted if loading from multiple directories
+    """
     server_files_info = []
-    server_dir = f"/app/server_files/{page_name}"
     
-    logger.info(f"Getting server files info for page: {page_name} from directory: {server_dir}")
+    # Default to just the page's own directory if not specified
+    if directories is None:
+        directories = [page_name]
     
-    if not os.path.exists(server_dir):
-        logger.info(f"Server files directory does not exist: {server_dir}")
-        return server_files_info
-    
-    try:
-        files_list = os.listdir(server_dir)
-        logger.info(f"Found {len(files_list)} files in {server_dir}: {files_list}")
+    for directory in directories:
+        server_dir = f"/app/server_files/{directory}"
         
-        for filename in files_list:
-            try:
-                file_path = os.path.join(server_dir, filename)
-                logger.info(f"Processing file: {file_path}")
-                
-                if not os.path.isfile(file_path):
-                    logger.info(f"Skipping {filename} - not a regular file")
+        logger.info(f"Getting server files info for directory: {directory} from path: {server_dir}")
+        
+        if not os.path.exists(server_dir):
+            logger.info(f"Server files directory does not exist: {server_dir}")
+            continue
+        
+        try:
+            files_list = os.listdir(server_dir)
+            logger.info(f"Found {len(files_list)} files in {server_dir}: {files_list}")
+            
+            for filename in files_list:
+                try:
+                    file_path = os.path.join(server_dir, filename)
+                    logger.info(f"Processing file: {file_path}")
+                    
+                    if not os.path.isfile(file_path):
+                        logger.info(f"Skipping {filename} - not a regular file")
+                        continue
+                    
+                    # Get file info
+                    file_stat = os.stat(file_path)
+                    file_size = file_stat.st_size
+                    
+                    # Format file size
+                    if file_size < 1024:
+                        size_str = f"{file_size} B"
+                    elif file_size < 1024 * 1024:
+                        size_str = f"{file_size / 1024:.1f} KB"
+                    else:
+                        size_str = f"{file_size / (1024 * 1024):.1f} MB"
+                    
+                    # Get file type
+                    file_ext = os.path.splitext(filename)[1].lower()
+                    if file_ext == '.docx':
+                        file_type = 'Word Document'
+                    elif file_ext == '.pdf':
+                        file_type = 'PDF Document'
+                    elif file_ext == '.txt':
+                        file_type = 'Text File'
+                    else:
+                        file_type = 'Unknown'
+                    
+                    # Create display name
+                    base_display_name = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
+                    
+                    # Add directory prefix if loading from multiple directories and not the page's own directory
+                    if len(directories) > 1 and directory != page_name:
+                        display_name = f"{directory.title()} - {base_display_name}"
+                    else:
+                        display_name = base_display_name
+                    
+                    file_info = {
+                        'filename': filename,
+                        'display_name': display_name,
+                        'file_type': file_type,
+                        'size': size_str,
+                        'supported': file_ext in ['.docx', '.pdf', '.txt'],
+                        'source_directory': directory  # Track which directory this came from
+                    }
+                    
+                    server_files_info.append(file_info)
+                    logger.info(f"Added file info: {file_info}")
+                    
+                except Exception as file_error:
+                    logger.error(f"Error processing file {filename}: {file_error}")
                     continue
-                
-                # Get file info
-                file_stat = os.stat(file_path)
-                file_size = file_stat.st_size
-                
-                # Format file size
-                if file_size < 1024:
-                    size_str = f"{file_size} B"
-                elif file_size < 1024 * 1024:
-                    size_str = f"{file_size / 1024:.1f} KB"
-                else:
-                    size_str = f"{file_size / (1024 * 1024):.1f} MB"
-                
-                # Get file type
-                file_ext = os.path.splitext(filename)[1].lower()
-                if file_ext == '.docx':
-                    file_type = 'Word Document'
-                elif file_ext == '.pdf':
-                    file_type = 'PDF Document'
-                elif file_ext == '.txt':
-                    file_type = 'Text File'
-                else:
-                    file_type = 'Unknown'
-                
-                # Create display name
-                display_name = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
-                
-                file_info = {
-                    'filename': filename,
-                    'display_name': display_name,
-                    'file_type': file_type,
-                    'size': size_str,
-                    'supported': file_ext in ['.docx', '.pdf', '.txt']
-                }
-                
-                server_files_info.append(file_info)
-                logger.info(f"Added file info: {file_info}")
-                
-            except Exception as file_error:
-                logger.error(f"Error processing file {filename}: {file_error}")
-                continue
-        
-        # Sort by filename
-        server_files_info.sort(key=lambda x: x['filename'])
-        logger.info(f"Successfully processed {len(server_files_info)} files for page {page_name}")
-        
-    except Exception as e:
-        logger.error(f"Error listing files in directory {server_dir}: {e}")
-        return []
+            
+        except Exception as e:
+            logger.error(f"Error listing files in directory {server_dir}: {e}")
+            continue
+    
+    # Sort by display name
+    server_files_info.sort(key=lambda x: x['display_name'])
+    logger.info(f"Successfully processed {len(server_files_info)} files from {len(directories)} directories")
     
     return server_files_info
 
@@ -132,12 +153,4 @@ def truncate_text(text, max_length=500):
     return text[:max_length] + "..."
 
 def count_form_fields(form_data, exclude_keys=None):
-    """Count non-empty form fields, excluding specified keys"""
-    if exclude_keys is None:
-        exclude_keys = ['page_type', 'page_title', 'claude_prompt']
-    
-    count = 0
-    for key, value in form_data.items():
-        if key not in exclude_keys and str(value).strip():
-            count += 1
-    return count
+    """Count non-empty form fields,
