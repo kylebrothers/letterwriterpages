@@ -164,13 +164,29 @@ def build_claude_prompt(form_data, uploaded_files_data, server_files_data):
         else:
             cleaned_sections.append(str(section))
     
-    # Combine everything
-    if cleaned_sections:
-        full_prompt = "\n".join(cleaned_sections) + "\n\n" + custom_prompt
-    else:
-        full_prompt = custom_prompt
-    
-    return full_prompt, None
+# Combine everything
+if cleaned_sections:
+    full_prompt = "\n".join(cleaned_sections) + "\n\n" + custom_prompt
+else:
+    full_prompt = custom_prompt
+
+# Check if there are base64 images in the form data (NEW - for vision support)
+pdf_images = []
+if 'pdf_images' in form_data:
+    import json
+    try:
+        pdf_images = json.loads(form_data['pdf_images'])
+        # Return structured format for vision API
+        return {
+            'prompt': full_prompt,
+            'images': pdf_images,
+            'use_vision': True
+        }, None
+    except Exception as e:
+        logger.warning(f"Failed to parse pdf_images: {e}")
+        # Fall through to normal text-only response
+
+return full_prompt, None
 
 def handle_no_call_page(page_name, form_data, uploaded_files_data, server_files_data, session_id):
     """Handle no-call pages that organize and display information without API calls"""
@@ -339,16 +355,41 @@ def handle_claude_call_page(page_name, form_data, uploaded_files_data, server_fi
         if error:
             return jsonify({'error': error}), 400
         
-        # Call Claude API
-        message = claude_client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=5000,
-            messages=[
-                {"role": "user", "content": claude_prompt}
-            ]
-        )
-        
-        generated_content = message.content[0].text
+# Call Claude API
+# Check if this is a vision request (NEW)
+if isinstance(claude_prompt, dict) and claude_prompt.get('use_vision'):
+    # Build message content with images for vision API
+    messages_content = [{"type": "text", "text": claude_prompt['prompt']}]
+    
+    # Add each image to the message
+    for img in claude_prompt.get('images', []):
+        messages_content.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": img.get('base64', '')
+            }
+        })
+    
+    message = claude_client.messages.create(
+        model="claude-sonnet-4-5-20250929",  # Vision-capable model
+        max_tokens=5000,
+        messages=[
+            {"role": "user", "content": messages_content}
+        ]
+    )
+else:
+    # Existing text-only path (backward compatible)
+    message = claude_client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=5000,
+        messages=[
+            {"role": "user", "content": claude_prompt}
+        ]
+    )
+
+generated_content = message.content[0].text
         
         logger.info(f"Claude API successful for page: {page_name} - Session: {session_id}")
         
