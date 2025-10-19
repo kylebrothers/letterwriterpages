@@ -367,7 +367,7 @@ def handle_claude_call_page(page_name, form_data, uploaded_files_data, server_fi
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/png",
+                        "media_type": img.get('media_type', 'image/jpeg'),  # <-- Use media_type from client, default to jpeg
                         "data": img.get('base64', '')
                     }
                 })
