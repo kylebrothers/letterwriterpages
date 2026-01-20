@@ -373,7 +373,7 @@ def handle_claude_call_page(page_name, form_data, uploaded_files_data, server_fi
                 })
             
             message = claude_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=5000,
                 messages=[
                     {"role": "user", "content": messages_content}
@@ -382,7 +382,7 @@ def handle_claude_call_page(page_name, form_data, uploaded_files_data, server_fi
         else:
             # Existing text-only path (backward compatible)
             message = claude_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=5000,
                 messages=[
                     {"role": "user", "content": claude_prompt}
