@@ -1,6 +1,6 @@
 # Makefile for Promotion Letters Flask App
 
-.PHONY: help build up down restart logs shell clean dev test
+.PHONY: help build up down restart logs shell clean dev test setup rebuild
 
 # Default target
 help:
@@ -9,6 +9,7 @@ help:
 	@echo "  up       - Start the application"
 	@echo "  down     - Stop the application"
 	@echo "  restart  - Restart the application"
+	@echo "  rebuild  - Remove volumes, rebuild image (no cache), restart"
 	@echo "  logs     - View application logs"
 	@echo "  shell    - Access application shell"
 	@echo "  clean    - Clean up containers and images"
@@ -31,6 +32,13 @@ down:
 
 # Restart the application
 restart: down up
+
+# Full rebuild: stop, remove volumes, rebuild image, restart
+rebuild:
+	docker-compose down -v
+	docker-compose build --no-cache
+	docker-compose up -d
+	@echo "Rebuild complete. Application started at http://localhost:5000"
 
 # View logs
 logs:
