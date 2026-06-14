@@ -19,47 +19,47 @@ help:
 
 # Build the Docker image
 build:
-	docker-compose build
+	docker compose build
 
 # Start the application
 up:
-	docker-compose up -d
+	docker compose up -d
 	@echo "Application started at http://localhost:5000"
 
 # Stop the application
 down:
-	docker-compose down
+	docker compose down
 
 # Restart the application
 restart: down up
 
 # Full rebuild: stop, remove volumes, rebuild image, restart
 rebuild:
-	docker-compose down -v
-	docker-compose build --no-cache
-	docker-compose up -d
+	docker compose down -v
+	docker compose build --no-cache
+	docker compose up -d
 	@echo "Rebuild complete. Application started at http://localhost:5000"
 
 # View logs
 logs:
-	docker-compose logs -f promotion-letters
+	docker compose logs -f promotion-letters
 
 # Access application shell
 shell:
-	docker-compose exec promotion-letters bash
+	docker compose exec promotion-letters bash
 
 # Clean up
 clean:
-	docker-compose down -v --rmi all
+	docker compose down -v --rmi all
 	docker system prune -f
 
 # Development mode (with file watching)
 dev:
-	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 # Run tests
 test:
-	docker-compose exec promotion-letters python -m pytest tests/
+	docker compose exec promotion-letters python -m pytest tests/
 
 # Initial setup
 setup:
@@ -90,8 +90,8 @@ start: setup build up
 
 # Status check
 status:
-	docker-compose ps
+	docker compose ps
 
 # View container stats
 stats:
-	docker stats promotion-letters-app promotion-letters-redis
+	docker stats promotion-letters-app
